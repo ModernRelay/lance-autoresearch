@@ -90,12 +90,26 @@ impl PostingIntersect {
     }
 }
 
+/// Dispatch threshold: when one list is more than this multiple of the
+/// other, gallop on the longer list instead of two-finger merging. 16x is
+/// the empirical crossover point: below it, gallop's per-element setup
+/// (exponential search + binary-search bracket) is dominated by the linear
+/// scan it would have skipped; above it, gallop's O(N log(M/N)) wins
+/// decisively over merge's O(N+M).
+const GALLOP_RATIO: usize = 16;
+
 #[inline]
 fn pairwise_intersect(a: &[u32], b: &[u32], out: &mut Vec<u32>) {
-    // Branchless step: on uniform inputs the original `av < bv` branch
-    // mispredicts ~50%. Arithmetic comparisons let both counters advance
-    // unconditionally; the remaining `av == bv` branch is rare (only on
-    // actual intersections) and predictable.
+    if b.len() > a.len().saturating_mul(GALLOP_RATIO) {
+        return gallop_intersect(a, b, out);
+    }
+    if a.len() > b.len().saturating_mul(GALLOP_RATIO) {
+        return gallop_intersect(b, a, out);
+    }
+    // Branchless step for balanced inputs: the original `av < bv` branch
+    // mispredicts ~50% on uniform data. Arithmetic comparisons let both
+    // counters advance unconditionally; the remaining `av == bv` branch
+    // is rare and predictable.
     let mut i = 0usize;
     let mut j = 0usize;
     while i < a.len() && j < b.len() {
@@ -106,5 +120,35 @@ fn pairwise_intersect(a: &[u32], b: &[u32], out: &mut Vec<u32>) {
         }
         i += (av <= bv) as usize;
         j += (av >= bv) as usize;
+    }
+}
+
+/// Galloping intersect: `short` has many fewer elements than `long`. For
+/// each element of `short`, exponentially-search `long` from the current
+/// position, then bisect the bracket. Cost is O(|short| log(|long|/|short|)).
+#[inline]
+fn gallop_intersect(short: &[u32], long: &[u32], out: &mut Vec<u32>) {
+    let mut j = 0usize;
+    for &sv in short {
+        if j >= long.len() {
+            return;
+        }
+        // Exponential search: double the step until long[j+step] >= sv or
+        // we run off the end.
+        let mut step = 1usize;
+        while j + step < long.len() && long[j + step] < sv {
+            step *= 2;
+        }
+        // sv lies in long[j..min(j+step+1, long.len())]; bisect that bracket.
+        let hi = (j + step + 1).min(long.len());
+        match long[j..hi].binary_search(&sv) {
+            Ok(idx) => {
+                out.push(sv);
+                j += idx + 1;
+            }
+            Err(idx) => {
+                j += idx;
+            }
+        }
     }
 }
