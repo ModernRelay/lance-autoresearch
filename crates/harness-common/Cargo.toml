@@ -1,0 +1,17 @@
+[package]
+name = "harness-common"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Shared utilities for lance-autoresearch per-target harnesses (PRNG, geomean, peak RSS, tolerance constants, time budget)."
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+# Linux-only: hardware perf counters via perf_event_open. On Mac / other
+# platforms the harness ships a no-op stub so the build stays portable.
+# `perf-event` is unprivileged when /proc/sys/kernel/perf_event_paranoid <= 1;
+# CAP_PERFMON is required on stricter kernels.
+[target.'cfg(target_os = "linux")'.dependencies]
+perf-event = "0.4"

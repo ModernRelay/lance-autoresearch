@@ -1,0 +1,12 @@
+[package]
+name = "lance-snapshots"
+version = "0.1.0"
+edition = "2024"
+# Per-file SPDX headers carry the upstream Apache-2.0 license, matching
+# the harness workspace's Apache-2.0 root.
+license = "Apache-2.0"
+description = "Verbatim snapshots of Lance hot-path kernels (lance-format/lance, Apache-2.0) used as the upstream-SOTA baseline + correctness oracle for lance-autoresearch."
+publish = false
+
+[lib]
+path = "src/lib.rs"

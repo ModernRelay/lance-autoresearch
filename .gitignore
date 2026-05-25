@@ -1,0 +1,7 @@
+target/
+results.tsv
+lessons.md
+run.log
+.DS_Store
+*.swp
+data/
