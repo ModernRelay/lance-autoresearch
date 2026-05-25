@@ -1,9 +1,9 @@
 //! Aggregators and noise-bound estimators for u64 timing samples.
 //!
-//! `geomean` is the central tendency we report (robust to halve-one /
+//! `geomean` is the central tendency we report (insensitive to halve-one /
 //! double-other outliers that arithmetic mean would mishandle). `median` and
-//! `iqr` give a robust spread summary. `bootstrap_ci_geomean` returns a 90%
-//! confidence interval on the geomean via resampling — used by the keep-gate
+//! `iqr` give a stable spread summary. `bootstrap_ci_geomean` returns a 90%
+//! confidence interval on the geomean via resampling, used by the keep-gate
 //! to test whether a trial's measurement is statistically distinguishable
 //! from the current-best baseline, rather than relying on a fragile fixed
 //! "1% noise band" assumption that doesn't hold on Apple Silicon.
@@ -37,7 +37,7 @@ pub fn median(xs: &[u64]) -> u64 {
     }
 }
 
-/// (Q1, Q3) — the 25th and 75th percentile. Returns (0, 0) for empty input.
+/// (Q1, Q3), the 25th and 75th percentile. Returns (0, 0) for empty input.
 /// Uses nearest-rank selection rather than linear interpolation; differences
 /// matter very little at our sample sizes (288+ per measurement).
 pub fn iqr(xs: &[u64]) -> (u64, u64) {

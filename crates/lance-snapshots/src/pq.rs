@@ -7,7 +7,7 @@
 //   - rust/lance-index/src/vector/pq/utils.rs (get_sub_vector_centroids)
 //   - rust/lance-index/src/vector/pq/storage.rs (transpose)
 //
-// Concretized to the 8-bit (num_bits=8, NUM_CENTROIDS=256) f32 path —
+// Concretized to the 8-bit (num_bits=8, NUM_CENTROIDS=256) f32 path ,
 // the dominant Lance code path and the only one our harness exercises.
 // The 4-bit path uses u8x16 SIMD shuffle (LUT16) and is intentionally omitted
 // (separate kernel surface; would need its own target crate).

@@ -1,4 +1,4 @@
-# Design — why the workspace is shaped this way
+# Design: why the workspace is shaped this way
 
 This document records the rationale for the multi-target workspace shape so
 future contributors don't relitigate the early decisions.
@@ -6,13 +6,13 @@ future contributors don't relitigate the early decisions.
 ## The thing we're building
 
 A multi-target harness for LLM-driven optimization of Lance hot-path kernels.
-"Multi-target" because Lance has many such kernels — distance kernels in
-`lance-linalg`, decoders in `lance-encoding`, scan/merge kernels — and the
+"Multi-target" because Lance has many such kernels (distance kernels in
+`lance-linalg`, decoders in `lance-encoding`, scan/merge kernels), and the
 right harness shape is identical across them: bit-exact correctness oracle,
 geomean-across-distributions speed metric, single-agent autoresearch loop.
 
 The first landed target (`pq-l2`) proves the harness shape; subsequent
-targets follow the same template — see `../README.md` for the candidate
+targets follow the same template, see `../README.md` for the candidate
 roadmap and `adding-a-target.md` for the workflow.
 
 ## Decision: workspace, not single crate
@@ -38,14 +38,14 @@ for three reasons:
    The agent's iteration loop is faster because it doesn't pay for unrelated
    targets' compile time.
 
-The downside — workspace boilerplate, per-target `Cargo.toml`, the empty
-`[workspace]` block at the workspace root that prevents cargo from walking up
-to the parent omnigraph workspace — is a one-time cost. Per-target overhead
-of adding a new target is one `cp -r` plus path edits.
+The downside (workspace boilerplate, per-target `Cargo.toml`, the empty
+`[workspace]` block at the workspace root that prevents cargo from walking
+up to the parent omnigraph workspace) is a one-time cost. Per-target
+overhead of adding a new target is one `cp -r` plus path edits.
 
 ## Decision: shared `harness-common` crate, no `Target` trait
 
-A `Target` trait was the obvious-looking other alternative — express the
+A `Target` trait was the obvious-looking other alternative: express the
 common loop generically, plug in target-specific types. Rejected because:
 
 1. **Kernel signatures vary too much for a single trait shape.** PQ
@@ -76,11 +76,11 @@ target consumes what it needs. The shared loop contract is documented in
 
 The agent reads two files at session start:
 
-- `HARNESS.md` (workspace-level) — universal: the loop, the metric, the
+- `HARNESS.md` (workspace-level): the universal loop, the metric, the
   edit-permission table, hygiene rules.
-- `crates/<target>/program.md` (per-target) — specific: the kernel API the
-  agent must keep stable, target-specific priors (which SIMD intrinsics tend
-  to win on this kernel shape), the `results.tsv` column header.
+- `crates/<target>/program.md` (per-target): the kernel API the agent must
+  keep stable, target-specific priors (which SIMD intrinsics tend to win
+  on this kernel shape), the `results.tsv` column header.
 
 The shape mirrors how Karpathy's [`autoresearch`](https://github.com/karpathy/autoresearch)
 `program.md` works, factored across the dimension that varies (per target)
@@ -106,9 +106,9 @@ This decision generalizes to every target. Decode kernels get strict bitwise
 equality (no float arithmetic involved). Distance and BM25 kernels get
 `max_abs_err ≤ 1e-4` (loose enough for SIMD-accumulator reordering, tight
 enough for real bugs). Targets that genuinely require lossy techniques to
-get headroom — there might be some; LUT u8 quantization in PQ is one — go
-in a separate "lossy track" with a recall-based oracle on diverse datasets,
-not the bit-exact track.
+get headroom (LUT u8 quantization in PQ is one example) go in a separate
+"lossy track" with a recall-based oracle on diverse datasets, away from
+the bit-exact track.
 
 ## Decision: per-target speed measurement spans multiple shapes × distributions
 
@@ -145,7 +145,7 @@ generalize.
 If the workspace grows past ~6 active targets and we notice we're
 copy-pasting more than ~50 lines of `run_experiment.rs` boilerplate per new
 target, consider extracting a shared `RunExperiment` helper that takes
-closures for the correctness and speed phases. Don't pre-extract — wait
+closures for the correctness and speed phases. Don't pre-extract; wait
 until the duplication is real and visible.
 
 If we add a target that genuinely doesn't fit the autoresearch loop (eval

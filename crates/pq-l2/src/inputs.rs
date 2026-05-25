@@ -12,10 +12,10 @@
 //! workloads spanning multiple PQ shapes × data distributions. Used by the
 //! speed phase. Fixed seed produces reproducible timings across trials.
 //!
-//! There is no fixed dataset (no SIFT1M, no codebook fixture). Everything is
-//! generated deterministically per call. The PQ codebook for each workload is
-//! "trained" with a fast pseudo-k-means (random-init + 2 Lloyd iterations) so
-//! the codebook is shape-appropriate, not random.
+//! No fixed dataset (no SIFT1M, no codebook fixture); everything generates
+//! deterministically per call from the seed. The PQ codebook for each
+//! workload is "trained" with a fast pseudo-k-means (random-init + 2 Lloyd
+//! iterations) so the codebook is shape-appropriate, not random.
 
 use crate::PqShape;
 use harness_common::SplitMix64;
@@ -29,7 +29,7 @@ pub const SHAPES: &[PqShape] = &[
 ];
 
 /// Number of base vectors used in each speed workload. Kept moderate so a full
-/// trial finishes in seconds, not minutes — the benchmark is per-query speed,
+/// trial finishes in seconds, not minutes, the benchmark is per-query speed,
 /// not throughput, so absolute scale doesn't change the comparison.
 pub const SPEED_NUM_BASE: usize = 20_000;
 

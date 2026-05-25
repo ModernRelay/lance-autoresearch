@@ -1,4 +1,4 @@
-//! Criterion benchmark — same kernels the agent edits, with statistical sampling.
+//! Criterion benchmark, same kernels the agent edits, with statistical sampling.
 //! Use this for stable speed comparisons; `run_experiment` is the per-trial harness.
 //!
 //! `cargo bench --bench pq_l2`

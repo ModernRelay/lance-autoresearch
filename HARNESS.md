@@ -1,4 +1,4 @@
-# HARNESS — shared loop contract for every lance-autoresearch target
+# HARNESS, shared loop contract for every lance-autoresearch target
 
 This document is the universal part of every target's agent instructions. Each
 target's `program.md` is a thin layer of *target-specific priors and API spec*
@@ -15,7 +15,7 @@ This is a Karpathy-style autoresearch loop. It assumes:
 
 - Per-trial eval is **seconds-scale**. Long enough to measure, short enough to
   iterate hundreds of times in a session.
-- The kernel has a **deterministic correctness oracle** — a scalar reference
+- The kernel has a **deterministic correctness oracle**, a scalar reference
   that produces the same answer to compare against.
 - The optimization target is **dataset-independent**: the harness generates
   diverse inputs each trial, so wins generalize across distributions and
@@ -51,19 +51,19 @@ that holds today but isn't documented).
 Every target's `run_experiment` binary prints a fixed-format output block ending
 with these universal fields:
 
-- `correctness:` — `pass` or `fail`. Set by comparing your kernel against the
+- `correctness:`, `pass` or `fail`. Set by comparing your kernel against the
   scalar reference on every input the bench generates.
-- `arch:` — the detected `target_arch` (e.g., `aarch64`, `x86_64`). Tells you
+- `arch:`, the detected `target_arch` (e.g., `aarch64`, `x86_64`). Tells you
   which `program.md` priors section applies.
-- `geomean_ns_per_*:` — geometric mean of per-operation wall-clock across all
+- `geomean_ns_per_*:`, geometric mean of per-operation wall-clock across all
   timed operations.
-- `geomean_cycles_per_*:` — geomean of CPU cycles per operation. Populated on
+- `geomean_cycles_per_*:`, geomean of CPU cycles per operation. Populated on
   Linux when `perf_event_open` is available; `n/a` on macOS and on Linux when
   `/proc/sys/kernel/perf_event_paranoid > 1` (needs `CAP_PERFMON`).
-- `geomean_instructions_per_*:` — same conditions as cycles.
-- `worst_ns_per_*:` — slowest combo's geomean.
-- `peak_mem_mb:` — process RSS high-water-mark.
-- `total_seconds:` — trial wall-clock.
+- `geomean_instructions_per_*:`, same conditions as cycles.
+- `worst_ns_per_*:`, slowest combo's geomean.
+- `peak_mem_mb:`, process RSS high-water-mark.
+- `total_seconds:`, trial wall-clock.
 
 A kernel is **kept** iff:
 
@@ -78,7 +78,7 @@ A kernel is **kept** iff:
    - Both CIs come from the bootstrap_ci_geomean field printed as
      `geomean_*_ci_90pct: [lo, hi]`.
 3. `worst_ns_per_*` ≤ 1.05 × the previous best-kept kernel's worst (wall-clock,
-   regardless of platform — the worst-case guard is platform-portable).
+   regardless of platform, the worst-case guard is platform-portable).
 4. `total_seconds` ≤ 600 (the per-trial cap; exceed it → `std::process::exit(3)`).
 5. Build clean: `cargo build --release` and
    `cargo clippy --release --all-targets -- -D warnings` both succeed.
@@ -146,7 +146,7 @@ After reading `HARNESS.md` and the target's `program.md`:
      kill it and mark the trial as `timeout`.
 
 10. **Capture lessons.** Append to `crates/<target>/lessons.md` (create if
-    missing — gitignored, lives only on this machine) whenever a trial
+    missing, gitignored, lives only on this machine) whenever a trial
     produces a finding worth remembering:
     - **Rejected trial with informative failure mode.** Concrete example: a
       cache-c² rewrite that fails the bit-exact oracle on a specific fixture.
@@ -168,7 +168,7 @@ one measurement, one commit. No multi-step plans across iterations.
 ## Working across multiple targets
 
 If a session spans multiple targets, work on **one target per session**. Don't
-edit `kernels.rs` in two crates between commits — the agent's mental model is
+edit `kernels.rs` in two crates between commits, the agent's mental model is
 shared but the keep-decision is per-target. Pick a target, do a session there,
 commit, switch.
 

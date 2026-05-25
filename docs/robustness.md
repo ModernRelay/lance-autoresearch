@@ -6,7 +6,7 @@ explains each one and the empirical observation that justifies it. Read it
 before removing or relaxing any of them.
 
 The features described here came from running the first autoresearch loop
-(`pq-l2`, May 2026 on Apple M1 Max — 6 trials, 4 keeps, 2 rejects, -49.8%
+(`pq-l2`, May 2026 on Apple M1 Max, 6 trials, 4 keeps, 2 rejects, -49.8%
 geomean from baseline) and noticing the harness was almost-but-not-quite
 solid enough to publish the result. The fixes landed before the second
 target launched so they apply to every kernel from `pq-l2` onward.
@@ -52,7 +52,7 @@ wall-clock is all you have, hence the bootstrap CI machinery.
 
 **Observation.** A trial whose geomean is 0.5% better than baseline might
 be a real win OR might be noise. The pre-fix gate used "geomean strictly
-better with 1% noise band" — too strict (rejects real 0.5% wins when noise
+better with 1% noise band", too strict (rejects real 0.5% wins when noise
 is 4%) and too generous (accepts noise-positive 1.5% "wins").
 
 **Fix.** Bootstrap 90% CI on the geomean, then test "trial CI upper-bound <
@@ -67,7 +67,7 @@ CI overlaps baseline's.
 
 **Don't relax.** The CI gate is what makes the experiment publishable. A
 Lance upstream maintainer will ask "is the speedup statistically
-significant?" — the answer should be a number, not a vibe.
+significant?", the answer should be a number, not a vibe.
 
 ## Why `lessons.md` is gitignored
 
@@ -81,7 +81,7 @@ same ground but the file stays local.
 
 **Don't change.** If you start committing `lessons.md`, every machine's
 findings collide and the file becomes useless. If a finding is genuinely
-portable (e.g., "the cache-c² rewrite always fails large_dynamic_range —
+portable (e.g., "the cache-c² rewrite always fails large_dynamic_range ,
 that's an algorithmic constraint, not a machine constraint"), promote it
 to `crates/<target>/program.md` as a documented prior caveat. That's where
 shared knowledge goes.

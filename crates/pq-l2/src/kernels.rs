@@ -23,7 +23,7 @@
 // What you CAN do:
 //   - Pre-process EVERYTHING in `new` (codebook transpose, codes transpose,
 //     L2Prepared SoA layout, c·c cache, etc.). Build cost is amortized
-//     across all queries — the bench measures per-query, not per-(build + query).
+//     across all queries, the bench measures per-query, not per-(build + query).
 //   - Reorder loops, switch internal data layouts, drop down to `std::arch`
 //     intrinsics under `#[cfg(target_arch = ...)]` gates (always keep a
 //     portable scalar fallback so this compiles everywhere).
@@ -33,7 +33,7 @@
 // What you CANNOT do:
 //   - Change the public API above.
 //   - Modify lib.rs / reference.rs / inputs.rs / run_experiment.rs / benches/.
-//   - Lose accuracy — the correctness phase asserts max_abs_err ≤ 1e-4 against
+//   - Lose accuracy, the correctness phase asserts max_abs_err ≤ 1e-4 against
 //     the upstream-via-lance-snapshots reference on every input. Lossy
 //     techniques (u8-LUT quantization, etc.) will fail the gate.
 

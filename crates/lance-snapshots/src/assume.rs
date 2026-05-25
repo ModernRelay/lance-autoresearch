@@ -6,8 +6,8 @@
 //
 // `assume!` / `assume_eq!` are the load-bearing macros that let LLVM elide
 // bounds checks and auto-vectorize in release. `debug_assert_eq!` alone
-// gets stripped in release; this macro additionally informs the optimizer
-// via `std::hint::assert_unchecked`.
+// gets stripped in release; these macros also tell the optimizer to assume
+// the condition holds, via `std::hint::assert_unchecked`.
 
 /// A macro that combines debug_assert and std::hint::assert_unchecked for optimized assertions
 ///

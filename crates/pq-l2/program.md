@@ -1,4 +1,4 @@
-# Target: PQ L2 — agent instructions
+# Target: PQ L2, agent instructions
 
 This is the per-target overlay on top of [`../../HARNESS.md`](../../HARNESS.md).
 Read **HARNESS.md first** for the universal loop contract (what's editable,
@@ -11,7 +11,7 @@ API spec and priors.
    - `../../HARNESS.md`
    - `../../README.md`
    - `program.md` (this file)
-   - `lessons.md` *(if present, gitignored — past trial findings for this machine)*
+   - `lessons.md` *(if present, gitignored, past trial findings for this machine)*
    - `src/lib.rs`
    - `src/kernels.rs` *(the only file you may edit)*
    - `src/reference.rs`
@@ -26,7 +26,7 @@ API spec and priors.
    cargo run --release --bin run_experiment -p pq-l2 -- --mode baseline > run.log 2>&1
    ```
    Append a row tagged `keep=baseline`, commit it. Note the `arch:` line in
-   the header — that determines which `[arch=...]` priors sub-section applies.
+   the header, that determines which `[arch=...]` priors sub-section applies.
 
 4. Per-trial: default 1-pass mode (faster iteration):
    ```
@@ -47,7 +47,7 @@ pre-computed state inside `PqKernel`, etc.
 pub struct PqKernel { /* agent's private fields */ }
 
 impl PqKernel {
-    /// Constructor — pre-process the codebook AND codes here (transposes,
+    /// Constructor, pre-process the codebook AND codes here (transposes,
     /// L2Prepared SoA layout, cached c·c, etc.). Build cost is amortized
     /// across all subsequent queries.
     pub fn new(shape: PqShape, codebook: &[f32], codes_aos: &[u8], num_vectors: usize) -> Self;
@@ -69,7 +69,7 @@ Top-K selection happens **outside** the kernel (in `run_experiment.rs`).
 That matches upstream's split: kernel writes per-vector distances; the
 caller selects top-K.
 
-Pre-processing in `new` is free — the bench measures
+Pre-processing in `new` is free, the bench measures
 `distance_table + compute_distances + top-K select` per query, not per
 (build + query). Codebook transposes, codes transposes, cached `c·c`,
 packed LUTs, etc., should live in `new`.
@@ -96,7 +96,7 @@ These are the directions that pay off on this kernel shape without
 compromising arithmetic accuracy. Pick one hypothesis per trial; don't try
 to combine multiple ideas at once.
 
-`run_experiment`'s header prints `arch:` — only the matching sub-section's
+`run_experiment`'s header prints `arch:`, only the matching sub-section's
 intrinsic ideas apply on your hardware. Algorithmic ideas in `[arch=any]`
 apply everywhere.
 
@@ -104,13 +104,13 @@ Before picking from this list, read `lessons.md` (gitignored, per-machine).
 Past trials may have already ruled out or confirmed specific hypotheses with
 mechanism notes. Don't re-tread settled ground.
 
-### `[arch=any]` — algorithmic / portable
+### `[arch=any]`, algorithmic / portable
 
 - **Codebook layout transpose.** Reference layout is `[m][k][d]`. Transposing
   to `[m][d][k]` lets a SIMD inner loop broadcast `q[d]` across `k` and
   compute `nc` distances per iteration instead of one. Do the transpose in
   `PqKernel::new` once; amortizes across queries.
-- **Cache `c·c` per centroid + hoist `q·q`** (CAVEAT — see lessons.md).
+- **Cache `c·c` per centroid + hoist `q·q`** (CAVEAT, see lessons.md).
   Rewrites `(q-c)² = q² + c² - 2·q·c`; the inner loop becomes an FMA-friendly
   dot product. **This breaks the bit-exact oracle on the `large_dynamic_range`
   fixture** due to catastrophic cancellation when `q,c` are O(10³) and the
@@ -129,7 +129,7 @@ mechanism notes. Don't re-tread settled ground.
   Watch for diminishing returns past 4x and per-shape regressions when the
   batch dominates a small inner loop.
 
-### `[arch=aarch64]` — NEON (Apple Silicon, ARM servers)
+### `[arch=aarch64]`, NEON (Apple Silicon, ARM servers)
 
 - **Inner loop with `vfmaq_f32`.** `core::arch::aarch64::vfmaq_f32(a, b, c)`
   computes `a + b*c` lane-wise. Maps directly to `fmla v0.4s, v1.4s, v2.4s`.
@@ -144,7 +144,7 @@ mechanism notes. Don't re-tread settled ground.
 - **No `vpgatherdq` equivalent.** NEON has no native gather instruction
   (unlike AVX2). Either transpose-then-load or scalar-loop the gather.
 
-### `[arch=x86_64]` — AVX2 (Intel, AMD)
+### `[arch=x86_64]`, AVX2 (Intel, AMD)
 
 - **FMA via `_mm256_fmadd_ps`.** 8 lanes of `a + b*c` per instruction.
   Same role as NEON's `vfmaq_f32`.

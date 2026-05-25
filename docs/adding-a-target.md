@@ -29,7 +29,7 @@ in `Cargo.toml` + `lib.rs`, registers the crate in the workspace `members`
 list, and prints a TODO checklist matching the steps below.
 
 The scaffolded crate will NOT build until you rewrite steps 3–7. That's by
-design — the copied source still references `pq_l2::...` types.
+design, the copied source still references `pq_l2::...` types.
 
 ### 2. Pick the template that matches your kernel shape
 
@@ -54,31 +54,31 @@ shared between `kernels.rs` and `reference.rs` and `inputs.rs`. Document
 which fields are pinned by the harness vs. agent-tunable.
 
 This file is **immutable** to the agent. The shape parameters define the
-optimization target — changing them changes what's being optimized.
+optimization target, changing them changes what's being optimized.
 
 ### 4. Rewrite `src/reference.rs`
 
-Implement the scalar reference kernel — the math, in plain Rust, no SIMD,
+Implement the scalar reference kernel: the math, in plain Rust, no SIMD,
 no cleverness. This is what the agent's kernel is compared against. Mirror
 the public API of `kernels.rs` exactly.
 
-For float kernels, also export `max_abs_err(a, b)` (or analogues) — the
+For float kernels, also export `max_abs_err(a, b)` (or analogues): the
 comparison helpers the bench uses to assert near-bit-exact equivalence
 with `harness_common::MAX_ABS_ERR`. The reference can also be a thin
 wrapper over `lance-snapshots` if the upstream function exists (as
 `pq-l2`'s does); that's the preferred pattern.
 
-For integer / byte kernels, the comparison is simpler — `assert_eq!` on the
+For integer / byte kernels, the comparison is simpler: `assert_eq!` on the
 returned Arrow array. No tolerance constants needed.
 
 ### 5. Rewrite `src/inputs.rs`
 
 Two surfaces:
 
-- `correctness_battery(seed) -> Vec<CorrectnessCase>` — diverse shape ×
+- `correctness_battery(seed) -> Vec<CorrectnessCase>`, diverse shape ×
   distribution combinations, sized small enough that the correctness phase
   finishes in seconds. The point is breadth, not realism.
-- `speed_workloads(seed) -> Vec<SpeedWorkload>` — larger shape × distribution
+- `speed_workloads(seed) -> Vec<SpeedWorkload>`, larger shape × distribution
   combinations sized for stable timings. Aim for total trial wall-clock
   ≤ 60s; the agent's iteration latency dominates correctness elsewhere.
 
@@ -92,7 +92,7 @@ upstream code. The header comment must:
 
 - Cite the upstream Lance source (`lance-format/lance` rev / file path) the
   algorithm is modeled on.
-- Document the public API the bench calls — these are the surfaces the agent
+- Document the public API the bench calls, these are the surfaces the agent
   may NOT change.
 - List "what you can do" / "what you cannot do" rules specific to this
   target.
@@ -123,7 +123,7 @@ Use:
 ### 8. (Optional) Rewrite `benches/<my-target>.rs`
 
 Criterion benchmark with the same kernel calls as `run_experiment` but
-under criterion's statistical-sampling harness. Optional — the per-trial
+under criterion's statistical-sampling harness. Optional, the per-trial
 binary is the agent's primary measurement; criterion is for the human's
 deeper investigation.
 
@@ -131,16 +131,17 @@ deeper investigation.
 
 Per-target agent skill, layered on top of `HARNESS.md`. Sections:
 
-- **Setup** — which files to read at session start. Always include
+- **Setup**, which files to read at session start. Always include
   `../../HARNESS.md` and `lessons.md` (if present).
-- **Public API contract** — the exact functions / structs the agent must
+- **Public API contract**: the exact functions / structs the agent must
   keep stable.
-- **Target-specific priors split into sub-sections** —
+- **Target-specific priors split into sub-sections**:
   `[arch=any]` for algorithmic ideas, `[arch=aarch64]` for NEON specifics,
   `[arch=x86_64]` for AVX2 specifics. The `run_experiment` header prints
   the detected `arch:` so the agent knows which sub-section applies.
-  This is the highest-leverage content; spend time on it.
-- **`results.tsv` header** — the per-target column set. Include `ci_lo`,
+  The priors section is where most of the agent's productivity comes from;
+  spend time on it.
+- **`results.tsv` header**: the per-target column set. Include `ci_lo`,
   `ci_hi` columns since the keep-gate uses CI overlap.
 
 ### 10. Write the per-target capsule in `docs/targets/<my-target>.md`
@@ -180,7 +181,7 @@ from `candidate` to `landed`.
 
 One commit for the target's scaffolding (the script's output) and a separate
 commit for the per-target rewrite. Don't bundle multiple targets in
-one commit — each target's history should be independently revertible.
+one commit, each target's history should be independently revertible.
 `lessons.md` and `results.tsv` are gitignored; only source + docs commit.
 
 ## Common gotchas

@@ -16,10 +16,10 @@
 //!   require erased boxing. Keep each target's API natural to its kernel.
 //!
 //! - Output-format orchestration. Each target's `run_experiment.rs` prints its
-//!   own fixed-format result block — different targets report different
+//!   own fixed-format result block, different targets report different
 //!   per-combo dimensions (PQ shapes vs bit widths vs distribution kinds vs ...).
 //!   Sharing the format would make the per-target binaries less readable and
-//!   gain very little — `println!` is cheap.
+//!   gain very little, `println!` is cheap.
 
 pub mod perf;
 pub mod prng;

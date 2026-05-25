@@ -56,19 +56,19 @@ rm -f "$DST/run.t"*.log "$DST/run."*.log 2>/dev/null || true
 
 # 2. Rename package name. macOS and Linux sed both accept `-i.bak` form.
 sed -i.bak "s/^name = \"pq-l2\"$/name = \"$NAME\"/" "$DST/Cargo.toml"
-sed -i.bak "s|Autoresearch target: Lance PQ L2 distance kernel optimization\.|Autoresearch target: <FILL IN — describe the Lance kernel under autoresearch>.|" "$DST/Cargo.toml"
+sed -i.bak "s|Autoresearch target: Lance PQ L2 distance kernel optimization\.|Autoresearch target: <FILL IN, describe the Lance kernel under autoresearch>.|" "$DST/Cargo.toml"
 rm -f "$DST/Cargo.toml.bak"
 
 # 3. Update lib.rs doc comment to reference the new target.
-sed -i.bak "s|//! Autoresearch target: Lance PQ L2 distance kernel optimization\.|//! Autoresearch target: <FILL IN — describe the Lance kernel under autoresearch>.|" "$DST/src/lib.rs"
+sed -i.bak "s|//! Autoresearch target: Lance PQ L2 distance kernel optimization\.|//! Autoresearch target: <FILL IN, describe the Lance kernel under autoresearch>.|" "$DST/src/lib.rs"
 rm -f "$DST/src/lib.rs.bak"
 
-# 4. Reset lessons.md (gitignored — won't be committed; just establishes the
+# 4. Reset lessons.md (gitignored, won't be committed; just establishes the
 #    convention so the agent's session-start read doesn't 404).
 cat > "$DST/lessons.md" <<EOF
 # $NAME lessons
 
-(empty — append after the first trial that produces a load-bearing finding.
+(empty, append after the first trial that produces a load-bearing finding.
 See HARNESS.md step 10 for what's worth recording.)
 EOF
 
@@ -102,14 +102,14 @@ cat <<EOF
 Scaffolded $DST
 
 TODO before first trial (per docs/adding-a-target.md):
-  1. Rewrite $DST/src/lib.rs        — define the target's Shape type
-  2. Rewrite $DST/src/reference.rs  — scalar reference (the oracle)
-  3. Rewrite $DST/src/inputs.rs     — diverse correctness + speed workloads
+  1. Rewrite $DST/src/lib.rs       , define the target's Shape type
+  2. Rewrite $DST/src/reference.rs , scalar reference (the oracle)
+  3. Rewrite $DST/src/inputs.rs    , diverse correctness + speed workloads
                                        (at least 5 distributions, 3 shapes)
-  4. Rewrite $DST/src/kernels.rs    — agent's playground; start with a clean
+  4. Rewrite $DST/src/kernels.rs   , agent's playground; start with a clean
                                        scalar baseline matching reference.rs
-  5. Rewrite $DST/src/bin/run_experiment.rs — update fixture types + output fields
-  6. Rewrite $DST/program.md        — target priors split by [arch=any]/aarch64/x86_64
+  5. Rewrite $DST/src/bin/run_experiment.rs, update fixture types + output fields
+  6. Rewrite $DST/program.md       , target priors split by [arch=any]/aarch64/x86_64
   7. Add docs/targets/$NAME.md capsule (one page: what's optimized, upstream
      pointer, oracle, speed-workload shape, status)
   8. Verify: cargo build --release -p $NAME && cargo run --release --bin run_experiment -p $NAME -- --mode baseline

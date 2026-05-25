@@ -9,7 +9,7 @@
 #   3. If different, lists the upstream files we vendor and shows how many
 #      commits each has had since our pinned SHA.
 #   4. Prints a re-sync recommendation (decided by the human, not by this
-#      script — semantic drift in a function we vendor doesn't always
+#      script, semantic drift in a function we vendor doesn't always
 #      require a re-sync).
 #
 # What it does NOT do:

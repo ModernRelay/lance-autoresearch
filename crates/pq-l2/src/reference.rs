@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! IMMUTABLE. Reference kernel — defines the math the agent must match.
+//! IMMUTABLE. Reference kernel, defines the math the agent must match.
 //!
 //! Thin wrapper around the vendored upstream code in `lance-snapshots`.
 //! The oracle IS upstream's current implementation (pinned SHA in

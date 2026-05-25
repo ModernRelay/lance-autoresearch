@@ -1,6 +1,6 @@
 //! Peak resident-set-size readback (Linux only; non-Linux returns 0).
 //!
-//! Reads `VmHWM` from `/proc/self/status` — the high-water-mark of resident
+//! Reads `VmHWM` from `/proc/self/status`, the high-water-mark of resident
 //! memory pages, not the high-water-mark of virtual address space. `VmPeak`
 //! (virtual peak) would include mmap'd files, guard pages, and untouched
 //! allocations; `VmHWM` is what users mean by "peak memory".

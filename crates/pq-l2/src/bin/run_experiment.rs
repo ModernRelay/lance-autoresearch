@@ -1,16 +1,16 @@
-//! IMMUTABLE entry point — the single command the agent invokes per trial.
+//! IMMUTABLE entry point, the single command the agent invokes per trial.
 //!
 //! Run with:  `cargo run --release --bin run_experiment -p pq-l2 > run.log 2>&1`
 //! (or `-- --mode baseline` for the 3-pass baseline run).
 //!
 //! Two phases:
 //!
-//!   PHASE 1 — CORRECTNESS.  For every (shape × input distribution) in the
+//!   PHASE 1, CORRECTNESS.  For every (shape × input distribution) in the
 //!   correctness battery, build the agent kernel and the upstream-vendored
 //!   reference, compare distance tables and per-vector distances. Both
 //!   max-abs-err must be ≤ MAX_ABS_ERR. Any single failure → exit 2.
 //!
-//!   PHASE 2 — SPEED.  For every (shape × data distribution) speed workload,
+//!   PHASE 2, SPEED.  For every (shape × data distribution) speed workload,
 //!   build the agent kernel once, then time `distance_table +
 //!   compute_distances + top-K select` for each query. Report per-(shape ×
 //!   distribution) geomean ns, plus global geomean / worst / best across all
@@ -34,10 +34,10 @@
 //!     total_seconds:         12.3
 //!
 //! Exit codes:
-//!   0  — both phases passed within time budget.
-//!   2  — correctness failure (agent kernel disagrees with reference).
-//!   3  — total wall-clock exceeded budget.
-//!   1  — any other error.
+//!   0: both phases passed within time budget.
+//!   2: correctness failure (agent kernel disagrees with reference).
+//!   3: total wall-clock exceeded budget.
+//!   1: any other error.
 
 use std::time::Instant;
 
@@ -288,7 +288,7 @@ fn run_speed(workloads: &[SpeedWorkload], passes: usize) -> SpeedReport {
     for _pass in 0..passes {
         for (wi, wl) in workloads.iter().enumerate() {
             let kernel = PqKernel::new(wl.shape, &wl.codebook, &wl.codes, wl.num_vectors);
-            // Per-query scratch buffers reused across queries — allocs must
+            // Per-query scratch buffers reused across queries, allocs must
             // stay out of the per-query timing so allocator improvements
             // don't masquerade as kernel improvements.
             let mut table = vec![0.0f32; wl.shape.distance_table_len()];
