@@ -104,13 +104,13 @@ a story, not a result.
 
 ## Lance upstream-PR checklist
 
-When a winning kernel is ready to port to `lance-format/lance`, gather:
+See [`docs/upstream-pr-checklist.md`](upstream-pr-checklist.md) for the
+full workflow. It covers how Lance's validation actually works (opt-in
+benches via `@bench-bot`, no PR-blocking gate, ARM64 CI hardware),
+the two-source evidence approach (Lance's own criterion bench plus our
+paired-CI measurement), and a PR-description skeleton.
 
-1. **Patch.** `git diff <baseline-sha> -- crates/<target>/src/kernels.rs`.
-2. **Criterion comparison.** `cargo bench --bench <target> -- --save-baseline baseline-sha` at the baseline commit, then `--save-baseline winning-sha` at the winning commit, then `critcmp baseline-sha winning-sha`. Gives a 95% CI on the speedup.
-3. **PMC cycle count delta.** Re-run `cargo run --release --bin run_experiment -p <target> -- --mode baseline` on Linux at both commits; the `geomean_cycles_per_query` delta is the most defensible single number (no wall-clock noise).
-4. **Fresh-clone verification.** Clone the repo to `/tmp/verify`, check out the winning commit, run the experiment. Confirms no incremental-compilation Heisenbug.
-5. **Bit-exactness statement.** The harness's `MAX_ABS_ERR = 1e-4` against the scalar reference means recall is preserved by construction. Cite the correctness battery distributions (e.g. Gaussian / uniform / sparse / large_dynamic_range / mostly_zero).
-6. **Machine context.** CPU model, OS, rustc version. Lance maintainers reproduce on their own CI.
-
-Apache-2.0 PR (the harness's Apache-2.0 license matches Lance's directly).
+Short version: the bit-exact gate (`MAX_ABS_ERR = 1e-4` against the
+upstream-vendored reference) means recall is preserved by construction;
+the paired-CI methodology means the speedup number doesn't depend on
+cross-session calibration. Both translate cleanly to a Lance PR.

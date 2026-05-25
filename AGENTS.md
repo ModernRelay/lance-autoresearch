@@ -27,6 +27,7 @@ Apache-2.0 PRs by construction.
 | Add a new target | `docs/adding-a-target.md` → `./scripts/scaffold-target.sh <name>` |
 | Maintain the harness itself | `docs/design.md` + `docs/robustness.md` |
 | Re-sync vendored Lance snapshots | `crates/lance-snapshots/RESYNC.md` |
+| Open a Lance upstream PR | `docs/upstream-pr-checklist.md` |
 | See the file layout | `README.md` § Repo layout |
 
 Don't read everything. Pick the row.
