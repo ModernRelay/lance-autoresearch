@@ -42,13 +42,17 @@ follows the [`docs/adding-a-target.md`](docs/adding-a-target.md) workflow.
 | `crates/fsst`          | candidate | `lance-encoding::encodings::fsst` | FSST string decode | pending |
 | `crates/take`          | candidate | `lance-core::utils::take` | Take / gather kernel | pending |
 | `crates/predicate`     | candidate | `lance-datafusion` filter eval | Predicate evaluation kernels | pending |
-| `crates/posting-intersect` | candidate | `lance-index::scalar::inverted` | Posting list intersection (FTS AND) | pending |
+| [`crates/posting-intersect`](crates/posting-intersect) | landed (baseline) | `lance-index::scalar::inverted` | Sorted u32 posting-list AND intersect | pending |
 | `crates/topk-merge`    | candidate | scan-merge | Top-K k-way merge | pending |
 
 The candidate targets are documented in [`docs/targets/`](docs/targets/) and
 can be added by following [`docs/adding-a-target.md`](docs/adding-a-target.md).
-The single landed target (`pq-l2`) proves the harness shape; the candidates
-wait for an agent to spin them up.
+`pq-l2` and `posting-intersect` are landed; the rest wait for an agent to
+spin them up. `pq-l2` carries the headline finding (−43% geomean vs upstream
+on M1 Max); `posting-intersect` is at baseline, with priors in
+[`crates/posting-intersect/program.md`](crates/posting-intersect/program.md)
+pointing at the SIMD-intersect / galloping / bitmap algorithm families
+where the win is expected.
 
 ## The contract every target follows
 

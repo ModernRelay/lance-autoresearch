@@ -160,6 +160,48 @@ After reading `HARNESS.md` and the target's `program.md`:
     Format: free-form Markdown; one entry per lesson with date, trial
     commit SHA, the mechanism, and the implication. Keep entries short.
 
+## Background research (papers, public benchmarks, blog posts)
+
+The inner trial loop is bounded by deterministic per-trial cost. Web fetches
+inside the loop break that bound and contaminate iteration latency. Background
+research happens at two specific points OUTSIDE the loop:
+
+1. **Session start, once.** After reading `program.md` + `lessons.md`, if the
+   target's priors list cites named papers or algorithms (e.g. "Lemire 2015
+   SIMD-galloping", "PForDelta", "BP128", "FSST paper"), or if `lessons.md`
+   contains an open `RESEARCH:` marker, do a focused fetch:
+   - Skim 1–3 papers/posts relevant to the next planned hypothesis.
+   - Extract: the algorithm's mechanism (one sentence), the conditions under
+     which it wins (input shape / distribution), and the published speedup
+     vs. a stated baseline.
+   - Append each to `lessons.md` under a `## References` section as one
+     bullet: `[citation] — mechanism — wins when X — published Yx vs Z`.
+   - Total time budget: ≤10 minutes. If a paper requires deep reading to be
+     useful, summarize what you got and move on.
+
+2. **On-stuck, between trials.** After **3 consecutive rejected trials on the
+   same target**, pause the inner loop and do one focused research pass:
+   re-read the last 10 `results.tsv` rows, identify the regime where the
+   kernel is stuck (e.g. "FP-ADD latency-bound on aarch64, write-port limited
+   when output width grows"), and fetch 1–2 sources targeting that regime.
+   Record findings in `lessons.md` under `## On-stuck research, <date>`.
+   Then propose a new hypothesis informed by what you read.
+
+**Never** fetch inside the inner loop (edit → build → bench → commit). A
+single web fetch can add 30s of variable latency; that destroys the
+per-trial cost bound the harness depends on. If a hypothesis requires an
+unfamiliar technique, do the fetch ONCE between trials, record what you
+learned, then enter the loop.
+
+**Provenance.** Cite every external source in the commit message of the
+trial it informs: `"galloping-based skip (Lemire 2017, §3.2): -22% on
+skewed-pair, no regression on balanced"`. Reviewers (you, future agents,
+the human porting upstream) need to retrace the reasoning.
+
+**Tools.** Use `WebFetch` for known URLs and `WebSearch` for discovery. If
+the target's `program.md` lists canonical references, prefer those over
+ad-hoc search; the human has already vetted them.
+
 ## Never stop
 
 Keep going until interrupted. Each loop iteration is one hypothesis, one edit,

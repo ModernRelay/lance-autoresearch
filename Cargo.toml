@@ -4,6 +4,7 @@ members = [
     "crates/harness-common",
     "crates/lance-snapshots",
     "crates/pq-l2",
+    "crates/posting-intersect",
 ]
 
 # Each per-target crate sets its own deps. Shared deps below pin versions
