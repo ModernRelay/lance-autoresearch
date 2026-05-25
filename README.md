@@ -7,38 +7,23 @@ in the style of Andrej Karpathy's
 
 ## What autoresearch is, and why it works
 
-Andrej Karpathy [introduced](https://github.com/karpathy/autoresearch) a
-minimal shape for LLM-driven research loops in early 2026: give an AI
-coding agent a small, self-contained piece of code, a benchmark, and a
-`program.md` Markdown file sketching the priors. The agent runs a loop:
-edit one file, build, run the benchmark, parse the output, keep the change
-if it improved the metric, revert if not, commit, repeat. Overnight you
-get dozens of trials. His framing: *"You wake up in the morning to a log
-of experiments and (hopefully) a better model."*
+Karpathy's [`autoresearch`](https://github.com/karpathy/autoresearch)
+(early 2026): give an LLM agent one mutable file, a fixed bench, and a
+`program.md` of priors. The agent loops — edit, build, run, keep-or-revert,
+commit — overnight, until you stop it. Karpathy's framing:
+*"You wake up to a log of experiments and (hopefully) a better model."*
 
-Karpathy's original target was single-GPU nanochat training (5-min trials,
-metric = `val_bpb`). This repo adapts the same shape for **Lance kernel
-optimization**: per-trial wall-clock is ~30 seconds, the metric is the
-geomean per-query latency of a fixed PQ benchmark, and the correctness
+This repo adapts that shape for **Lance kernel optimization**: per-trial
+~30s, one mutable file (`crates/<target>/src/kernels.rs`), correctness
 oracle is **upstream Lance code itself** (vendored verbatim in
-`crates/lance-snapshots/`). Any kept commit is bit-equivalent to what Lance
-ships today — wins port upstream as Apache-2.0 PRs by construction.
+`crates/lance-snapshots/`). Any kept commit is bit-equivalent to what
+Lance ships; wins port upstream as Apache-2.0 PRs.
 
-Why the autoresearch shape works:
-
-- **Fixed-cost trials** bound the agent's per-iteration budget. With ~30s
-  trials, ~100 iterations/hour is realistic without human input.
-- **One mutable file** keeps the diff scope tight. Karpathy's was
-  `train.py`; ours is `crates/<target>/src/kernels.rs`. Review is trivial;
-  the agent cannot accidentally drag in scope creep.
-- **Deterministic oracle** kills failed trials cleanly. The loop never
-  spirals into "fix this regression with another change."
-- **Self-orchestrating loop** means no external scheduler. The agent
-  reads `program.md`, sets up the branch and `results.tsv`, runs trials,
-  decides keep/revert, commits. The human walks away.
-- **Compounding via `lessons.md`** (gitignored, per-machine) means
-  findings from past trials inform future ones. The next session starts
-  smarter than the last.
+Why the shape works: fixed-cost trials bound the per-iteration budget
+(~100/hour); one mutable file keeps diffs reviewable and prevents scope
+creep; a deterministic oracle kills failed trials without spiraling;
+the loop self-orchestrates so the human can leave; findings compound
+across sessions via gitignored `lessons.md` per target.
 
 Each landed target is an independent Rust crate under `crates/`. The
 candidates below are listed as a roadmap — they have no code yet, only a
