@@ -32,7 +32,7 @@ follows the [`docs/adding-a-target.md`](docs/adding-a-target.md) workflow.
 
 | Target | Status | Lance source area | What's optimized | Best result |
 |---|---|---|---|---|
-| [`crates/pq-l2`](crates/pq-l2) | landed | `lance-linalg::distance::l2`, PQ probe | PQ L2 distance: distance_table + per-vector distances | **−13.5% geomean vs upstream** (M1 Max, aarch64; bit-equivalent output; x86 untested; see experiments/pq-l2-may25 branch) |
+| [`crates/pq-l2`](crates/pq-l2) | landed | `lance-linalg::distance::l2`, PQ probe | PQ L2 distance: distance_table + per-vector distances | **+11.9% speedup vs upstream**, paired CI [+11.4%, +12.4%] (M1 Max, aarch64; bit-equivalent output; x86 untested; see experiments/pq-l2-may25) |
 | `crates/pq-cosine`     | candidate | `lance-linalg::distance::cosine` | PQ cosine distance | pending |
 | `crates/pq-dot`        | candidate | `lance-linalg::distance::dot` | PQ dot-product distance | pending |
 | `crates/ivf-partition` | candidate | `lance-index::vector::ivf` partition select | IVF partition selection (centroid scan) | pending |

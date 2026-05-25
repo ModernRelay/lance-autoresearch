@@ -86,6 +86,53 @@ pub fn is_statistically_faster(a_ci: (u64, u64), b_ci: (u64, u64)) -> bool {
     a_ci.1 < b_ci.0
 }
 
+/// Paired bootstrap CI on the ratio `geomean(agent) / geomean(ref)`.
+///
+/// The paired resampler picks an index, then draws the (agent, ref) pair at
+/// that index together. This preserves the within-query correlation between
+/// agent and reference timings, which is exactly what an interleaved
+/// measurement captures and what makes the test much tighter than two
+/// independent bootstraps. Ratio < 1.0 means agent is faster.
+///
+/// Returns (lo, hi) where the central 90% of bootstrap ratios fall.
+/// `agent` and `ref` must be the same length. Returns (1.0, 1.0) on empty.
+pub fn bootstrap_ci_paired_ratio(
+    agent: &[u64],
+    reference: &[u64],
+    n_resamples: usize,
+    seed: u64,
+) -> (f64, f64) {
+    debug_assert_eq!(agent.len(), reference.len());
+    if agent.is_empty() {
+        return (1.0, 1.0);
+    }
+    let n = agent.len();
+    let mut rng = SplitMix64::new(seed);
+    let mut ratios: Vec<f64> = Vec::with_capacity(n_resamples);
+    for _ in 0..n_resamples {
+        let mut a_sum_ln = 0.0f64;
+        let mut r_sum_ln = 0.0f64;
+        for _ in 0..n {
+            let idx = (rng.next_u64() as usize) % n;
+            a_sum_ln += (agent[idx].max(1) as f64).ln();
+            r_sum_ln += (reference[idx].max(1) as f64).ln();
+        }
+        let geomean_a = (a_sum_ln / n as f64).exp();
+        let geomean_r = (r_sum_ln / n as f64).exp();
+        ratios.push(geomean_a / geomean_r);
+    }
+    ratios.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let lo_idx = (n_resamples * 5) / 100;
+    let hi_idx = ((n_resamples * 95) / 100).min(n_resamples - 1);
+    (ratios[lo_idx], ratios[hi_idx])
+}
+
+/// Paired keep-gate: agent is statistically faster than reference when the
+/// 90% CI on the ratio `agent/ref` lies strictly below 1.0.
+pub fn is_statistically_faster_paired(ratio_ci: (f64, f64)) -> bool {
+    ratio_ci.1 < 1.0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,5 +183,43 @@ mod tests {
         assert!(is_statistically_faster((100, 200), (250, 300)));
         assert!(!is_statistically_faster((100, 200), (150, 300)));
         assert!(!is_statistically_faster((100, 200), (200, 300)));
+    }
+
+    #[test]
+    fn paired_ratio_catches_small_consistent_win() {
+        // Agent is 10% faster than reference on every sample, plus shared
+        // multiplicative noise (e.g. thermal). Independent bootstrap would
+        // wash out the signal because the noise dominates either marginal;
+        // paired bootstrap sees the consistent 0.9 ratio per sample.
+        let mut rng = SplitMix64::new(0xCAFE);
+        let n = 200;
+        let mut agent: Vec<u64> = Vec::with_capacity(n);
+        let mut reference: Vec<u64> = Vec::with_capacity(n);
+        for _ in 0..n {
+            // shared noise factor in [0.5, 1.5]: same query, different runs
+            let shared_noise = 0.5 + rng.next_f32() as f64;
+            let r_ns = (1000.0 * shared_noise) as u64;
+            let a_ns = (900.0 * shared_noise) as u64; // 10% faster
+            agent.push(a_ns);
+            reference.push(r_ns);
+        }
+        let (lo, hi) = bootstrap_ci_paired_ratio(&agent, &reference, 1000, 0xABCD);
+        // Paired CI should hug 0.9 tightly even with noise.
+        assert!(lo < 0.92, "lo={lo}");
+        assert!(hi < 0.92, "hi={hi}");
+        assert!(is_statistically_faster_paired((lo, hi)));
+    }
+
+    #[test]
+    fn paired_ratio_no_signal_brackets_1() {
+        // Agent and reference are independent samples from the same
+        // distribution. Paired ratio CI should bracket 1.0.
+        let mut rng = SplitMix64::new(0xDEAD);
+        let n = 200;
+        let agent: Vec<u64> = (0..n).map(|_| 800 + (rng.next_u64() % 400)).collect();
+        let reference: Vec<u64> = (0..n).map(|_| 800 + (rng.next_u64() % 400)).collect();
+        let (lo, hi) = bootstrap_ci_paired_ratio(&agent, &reference, 1000, 0xABCD);
+        assert!(lo < 1.0 && hi > 1.0, "CI should bracket 1.0: [{lo}, {hi}]");
+        assert!(!is_statistically_faster_paired((lo, hi)));
     }
 }

@@ -1,0 +1,28 @@
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.06s
+     Running `target/release/run_experiment --mode baseline`
+correctness:           pass
+---
+correctness:           pass
+arch:                  aarch64
+passes:                3
+shapes_tested:         (128,16,256) (256,16,256) (768,96,256)
+distributions_tested:  clustered uniform sparse
+geomean_ns_per_query:  214780
+geomean_ns_ci_90pct:   [205937, 224957]
+median_ns_per_query:   127979
+geomean_cycles_per_query: n/a (no PMU access on this platform)
+geomean_instructions_per_query: n/a (no PMU access on this platform)
+worst_ns_per_query:    662547 ((768,96,256), clustered)
+best_ns_per_query:     117413 ((256,16,256), clustered)
+per_combo_geomean_ns:
+  (128,16,256) clustered  -> 126268 ns
+  (128,16,256) uniform    -> 126529 ns
+  (128,16,256) sparse     -> 129522 ns
+  (256,16,256) clustered  -> 117413 ns
+  (256,16,256) uniform    -> 118230 ns
+  (256,16,256) sparse     -> 119230 ns
+  (768,96,256) clustered  -> 662547 ns
+  (768,96,256) uniform    -> 656776 ns
+  (768,96,256) sparse     -> 652601 ns
+peak_mem_mb:           0.0
+total_seconds:         26.64

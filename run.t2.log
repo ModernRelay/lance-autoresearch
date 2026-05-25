@@ -1,0 +1,6 @@
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.05s
+     Running `target/release/run_experiment --mode baseline`
+---
+correctness:           fail
+first_failure:         case=(128,16,256)/large_dynamic_range distance_table max_abs_err=4 > 0.0001
+total_seconds:         11.58

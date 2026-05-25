@@ -42,8 +42,8 @@
 use std::time::Instant;
 
 use harness_common::{
-    MAX_ABS_ERR, PerfCounters, TIME_BUDGET_SECS, bootstrap_ci_geomean, geomean, median,
-    peak_rss_mb,
+    MAX_ABS_ERR, PerfCounters, TIME_BUDGET_SECS, bootstrap_ci_geomean, bootstrap_ci_paired_ratio,
+    geomean, median, peak_rss_mb,
 };
 use pq_l2::inputs::{
     DISTRIBUTIONS, DataDistribution, SHAPES, SpeedWorkload, correctness_battery, speed_workloads,
@@ -121,6 +121,28 @@ fn main() {
     println!("median_ns_per_query:   {}", report.median_ns);
     print_pmc("geomean_cycles_per_query", report.geomean_cycles);
     print_pmc("geomean_instructions_per_query", report.geomean_instructions);
+    // Paired (interleaved with reference per query) measurement: this is
+    // the keep-gate-grade number because it eliminates cross-session
+    // calibration drift. Ratio < 1.0 means agent is faster than upstream.
+    println!(
+        "reference_geomean_ns_per_query: {}",
+        report.reference_geomean_ns
+    );
+    println!(
+        "paired_ratio_agent_over_ref:    {:.4}",
+        report.paired_ratio
+    );
+    println!(
+        "paired_ratio_ci_90pct:          [{:.4}, {:.4}]",
+        report.paired_ratio_ci.0, report.paired_ratio_ci.1
+    );
+    let paired_speedup_pct = (1.0 - report.paired_ratio) * 100.0;
+    let paired_speedup_lo = (1.0 - report.paired_ratio_ci.1) * 100.0;
+    let paired_speedup_hi = (1.0 - report.paired_ratio_ci.0) * 100.0;
+    println!(
+        "paired_speedup_pct:             {:+.2}% (CI [{:+.2}%, {:+.2}%])",
+        paired_speedup_pct, paired_speedup_lo, paired_speedup_hi
+    );
     println!(
         "worst_ns_per_query:    {} ({}, {})",
         report.worst_ns,
@@ -256,6 +278,7 @@ struct ComboReport {
 }
 
 struct SpeedReport {
+    // Agent measurements
     geomean_ns: u64,
     geomean_ns_ci: (u64, u64),
     median_ns: u64,
@@ -268,59 +291,99 @@ struct SpeedReport {
     best_shape: PqShape,
     best_dist: DataDistribution,
     per_combo: Vec<ComboReport>,
+    // Reference (upstream-via-lance-snapshots) measurements, interleaved
+    // with the agent in the same thermal/cache state.
+    reference_geomean_ns: u64,
+    // Paired ratio agent/reference. Ratio < 1.0 means agent is faster.
+    paired_ratio: f64,
+    paired_ratio_ci: (f64, f64),
 }
 
 fn run_speed(workloads: &[SpeedWorkload], passes: usize) -> SpeedReport {
     let mut all_timings: Vec<u64> = Vec::new();
     let mut all_cycles: Vec<u64> = Vec::new();
     let mut all_instr: Vec<u64> = Vec::new();
-    // Per-combo geomean is aggregated across all passes: we collect all
-    // timings into combo_timings for each workload, then take geomean once
-    // at the end.
+    // Paired (agent_ns, reference_ns) per query, captured back-to-back in
+    // the same thermal/cache state. Alternating order across queries
+    // (even qi: agent first; odd qi: reference first) cancels the
+    // warm-cache bias of the second call.
+    let mut paired_agent: Vec<u64> = Vec::new();
+    let mut paired_ref: Vec<u64> = Vec::new();
     let mut per_combo_timings: Vec<Vec<u64>> = vec![Vec::new(); workloads.len()];
 
-    // One PerfCounters per process is fine: start/stop is scoped per
-    // measurement and reuses the same perf_event_open fds. Saves a syscall
-    // per query vs constructing fresh per call.
     let mut perf = PerfCounters::new();
     let pmc_available = perf.has_pmc();
 
     for _pass in 0..passes {
         for (wi, wl) in workloads.iter().enumerate() {
             let kernel = PqKernel::new(wl.shape, &wl.codebook, &wl.codes, wl.num_vectors);
-            // Per-query scratch buffers reused across queries, allocs must
-            // stay out of the per-query timing so allocator improvements
-            // don't masquerade as kernel improvements.
+            let reference =
+                ScalarReference::new(wl.shape, &wl.codebook, &wl.codes, wl.num_vectors);
+            // Per-query scratch reused across queries, allocs stay out of the
+            // per-query timing so allocator improvements don't masquerade as
+            // kernel improvements.
             let mut table = vec![0.0f32; wl.shape.distance_table_len()];
             let mut distances = vec![0.0f32; wl.num_vectors];
             let mut topk: Vec<(u32, f32)> = Vec::with_capacity(wl.k);
 
-            // Warmup per (pass, workload): primes caches for this combo.
+            // Warmup both agent and reference; primes caches for this combo.
             {
                 let q = &wl.queries[..wl.shape.dim];
                 kernel.distance_table(q, &mut table);
                 kernel.compute_distances(&table, &mut distances);
                 select_top_k(&distances, wl.k, &mut topk);
                 std::hint::black_box(&topk);
+                reference.distance_table(q, &mut table);
+                reference.compute_distances(&table, &mut distances);
+                select_top_k(&distances, wl.k, &mut topk);
+                std::hint::black_box(&topk);
             }
 
             for qi in 0..wl.num_queries {
                 let q = &wl.queries[qi * wl.shape.dim..(qi + 1) * wl.shape.dim];
-                perf.start();
-                kernel.distance_table(q, &mut table);
-                kernel.compute_distances(&table, &mut distances);
-                select_top_k(&distances, wl.k, &mut topk);
-                let m = perf.stop();
-                all_timings.push(m.wall_clock_ns);
-                per_combo_timings[wi].push(m.wall_clock_ns);
-                if let Some(c) = m.cycles {
+
+                let (agent_ns, agent_m, ref_ns) = if qi.is_multiple_of(2) {
+                    // Even qi: agent first, reference second.
+                    perf.start();
+                    kernel.distance_table(q, &mut table);
+                    kernel.compute_distances(&table, &mut distances);
+                    select_top_k(&distances, wl.k, &mut topk);
+                    let m_a = perf.stop();
+                    std::hint::black_box(&topk);
+                    perf.start();
+                    reference.distance_table(q, &mut table);
+                    reference.compute_distances(&table, &mut distances);
+                    select_top_k(&distances, wl.k, &mut topk);
+                    let m_r = perf.stop();
+                    std::hint::black_box(&topk);
+                    (m_a.wall_clock_ns, m_a, m_r.wall_clock_ns)
+                } else {
+                    // Odd qi: reference first, agent second.
+                    perf.start();
+                    reference.distance_table(q, &mut table);
+                    reference.compute_distances(&table, &mut distances);
+                    select_top_k(&distances, wl.k, &mut topk);
+                    let m_r = perf.stop();
+                    std::hint::black_box(&topk);
+                    perf.start();
+                    kernel.distance_table(q, &mut table);
+                    kernel.compute_distances(&table, &mut distances);
+                    select_top_k(&distances, wl.k, &mut topk);
+                    let m_a = perf.stop();
+                    std::hint::black_box(&topk);
+                    (m_a.wall_clock_ns, m_a, m_r.wall_clock_ns)
+                };
+
+                all_timings.push(agent_ns);
+                per_combo_timings[wi].push(agent_ns);
+                paired_agent.push(agent_ns);
+                paired_ref.push(ref_ns);
+                if let Some(c) = agent_m.cycles {
                     all_cycles.push(c);
                 }
-                if let Some(i) = m.instructions {
+                if let Some(i) = agent_m.instructions {
                     all_instr.push(i);
                 }
-                // black_box prevents LTO from DCE-ing the top-K maintenance.
-                std::hint::black_box(&topk);
             }
         }
     }
@@ -343,8 +406,22 @@ fn run_speed(workloads: &[SpeedWorkload], passes: usize) -> SpeedReport {
         }
     }
 
+    let agent_geo = geomean(&all_timings);
+    let ref_geo = geomean(&paired_ref);
+    let paired_ratio = if ref_geo > 0 {
+        agent_geo as f64 / ref_geo as f64
+    } else {
+        1.0
+    };
+    let paired_ratio_ci = bootstrap_ci_paired_ratio(
+        &paired_agent,
+        &paired_ref,
+        BOOTSTRAP_RESAMPLES,
+        BOOTSTRAP_SEED,
+    );
+
     SpeedReport {
-        geomean_ns: geomean(&all_timings),
+        geomean_ns: agent_geo,
         geomean_ns_ci: bootstrap_ci_geomean(&all_timings, BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED),
         median_ns: median(&all_timings),
         geomean_cycles: pmc_available.then(|| geomean(&all_cycles)),
@@ -356,6 +433,9 @@ fn run_speed(workloads: &[SpeedWorkload], passes: usize) -> SpeedReport {
         best_shape: best.1,
         best_dist: best.2,
         per_combo,
+        reference_geomean_ns: ref_geo,
+        paired_ratio,
+        paired_ratio_ci,
     }
 }
 

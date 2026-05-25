@@ -52,42 +52,68 @@ Every target's `run_experiment` binary prints a fixed-format output block ending
 with these universal fields:
 
 - `correctness:`, `pass` or `fail`. Set by comparing your kernel against the
-  scalar reference on every input the bench generates.
+  upstream-vendored reference on every input the bench generates.
 - `arch:`, the detected `target_arch` (e.g., `aarch64`, `x86_64`). Tells you
   which `program.md` priors section applies.
 - `geomean_ns_per_*:`, geometric mean of per-operation wall-clock across all
-  timed operations.
+  timed operations. **Agent's** standalone measurement.
+- `geomean_ns_ci_90pct:`, bootstrap 90% CI on the geomean. Wide because it
+  doesn't account for cross-run drift (thermal, cache); see paired fields
+  below for the gate-grade number.
 - `geomean_cycles_per_*:`, geomean of CPU cycles per operation. Populated on
-  Linux when `perf_event_open` is available; `n/a` on macOS and on Linux when
-  `/proc/sys/kernel/perf_event_paranoid > 1` (needs `CAP_PERFMON`).
+  Linux when `perf_event_open` is available; `n/a` on macOS.
 - `geomean_instructions_per_*:`, same conditions as cycles.
-- `worst_ns_per_*:`, slowest combo's geomean.
+- `reference_geomean_ns_per_query:`, the upstream reference's geomean,
+  measured **interleaved with the agent** in the same thermal/cache state.
+- `paired_ratio_agent_over_ref:`, ratio of agent/reference geomeans on the
+  paired samples. `< 1.0` means agent is faster.
+- `paired_ratio_ci_90pct: [lo, hi]`, paired bootstrap 90% CI on that ratio.
+  Tight (typically ±0.5%) because shared noise cancels.
+- `paired_speedup_pct:`, `(1 - ratio) * 100`. Positive means agent faster.
+- `worst_ns_per_*:`, slowest combo's geomean (agent).
 - `peak_mem_mb:`, process RSS high-water-mark.
 - `total_seconds:`, trial wall-clock.
 
 A kernel is **kept** iff:
 
 1. `correctness: pass` (any failure → `std::process::exit(2)`).
-2. **Primary speed gate (non-overlapping 90% CI).**
-   - On Linux when PMC is available: `geomean_cycles_per_*` upper-bound of the
-     trial CI strictly below the current-best baseline's CI lower-bound. Cycles
-     noise is ~0.01% so this is effectively a strict-better test.
-   - On macOS / no-PMC: same logic on `geomean_ns_per_*` CI. Wall-clock noise
-     on Apple Silicon is ~4%, so the CI-overlap test prevents marginal "wins"
-     from passing on noise.
-   - Both CIs come from the bootstrap_ci_geomean field printed as
-     `geomean_*_ci_90pct: [lo, hi]`.
-3. `worst_ns_per_*` ≤ 1.05 × the previous best-kept kernel's worst (wall-clock,
-   regardless of platform, the worst-case guard is platform-portable).
+2. **Primary speed gate (paired bootstrap CI).** `paired_ratio_ci_90pct`
+   upper-bound strictly below 1.0. This is the load-bearing gate because
+   paired measurement eliminates cross-session calibration drift (the agent
+   and reference run in the same thermal/cache/scheduler state, per query).
+   - The independent `geomean_ns_ci_90pct` field is informational, not
+     gating. It's wider than the paired CI and prone to false negatives
+     when thermal noise dominates.
+   - On Linux with PMC: `geomean_cycles_per_*` is also informational
+     (deterministic, ~0.01% noise) and a useful second-source confirmation,
+     but the paired ratio is the contract.
+3. `worst_ns_per_*` ≤ 1.05 × the previous best-kept kernel's worst.
 4. `total_seconds` ≤ 600 (the per-trial cap; exceed it → `std::process::exit(3)`).
 5. Build clean: `cargo build --release` and
    `cargo clippy --release --all-targets -- -D warnings` both succeed.
 
+### Why paired measurement
+
+Every per-query measurement includes shared noise from the run (thermal
+state, page cache, scheduler, CPU frequency). The non-paired bootstrap CI
+treats agent and reference as independent samples, so that shared noise
+appears in both CIs as width. A real 12% win can hide under ±10% per-run
+noise.
+
+The paired test runs the agent and the reference back-to-back on the
+**same query**, with the order alternating per query (even qi: agent
+first; odd qi: reference first, to cancel warm-cache bias on the second
+call). The ratio `agent_ns / reference_ns` is computed per query; the
+bootstrap resamples those (agent, reference) pairs together. Shared noise
+cancels in the ratio; the CI on the ratio is typically ±0.5% even when
+the marginal CIs are ±10%.
+
 ### Baseline vs trial measurements
 
-Baseline runs use `cargo run --release --bin run_experiment -p <target> -- --mode baseline` which auto-runs the speed phase 3× and bundles all samples for a tighter CI (typically ±4% on wall-clock vs ±7% for a single pass). Trial runs use the default 1-pass mode for faster iteration.
-
-Result: the baseline CI is tight (it's the reference); trial CIs are wider but still expected to clear by margin on real wins. The keep-gate "trial-upper < baseline-lower" works because a real win produces a trial geomean far enough below baseline that even the wide trial CI doesn't overlap.
+`--mode baseline` runs 3 passes (vs the default 1) for a tighter
+independent CI on the agent. The paired ratio CI is already tight enough
+in either mode that the choice mostly affects the `geomean_ns_ci_90pct`
+width. For trial decisions, the paired ratio is what matters.
 
 Exit codes summary for `run_experiment`: `0` on success, `1` on internal
 error (panic, fixture load failure), `2` on correctness failure, `3` on

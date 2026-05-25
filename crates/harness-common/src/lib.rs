@@ -29,7 +29,10 @@ pub mod tolerance;
 
 pub use perf::{PerfCounters, PerfMeasurement};
 pub use prng::SplitMix64;
-pub use stats::{bootstrap_ci_geomean, geomean, iqr, is_statistically_faster, median};
+pub use stats::{
+    bootstrap_ci_geomean, bootstrap_ci_paired_ratio, geomean, iqr, is_statistically_faster,
+    is_statistically_faster_paired, median,
+};
 pub use sysinfo::peak_rss_mb;
 pub use tolerance::MAX_ABS_ERR;
 

@@ -1,0 +1,29 @@
+   Compiling pq-l2 v0.1.0 (/private/tmp/lance-autoresearch-new/crates/pq-l2)
+    Finished `release` profile [optimized + debuginfo] target(s) in 3.43s
+     Running `target/release/run_experiment --mode baseline`
+correctness:           pass
+---
+correctness:           pass
+arch:                  aarch64
+passes:                3
+shapes_tested:         (128,16,256) (256,16,256) (768,96,256)
+distributions_tested:  clustered uniform sparse
+geomean_ns_per_query:  182300
+geomean_ns_ci_90pct:   [174833, 190966]
+median_ns_per_query:   105187
+geomean_cycles_per_query: n/a (no PMU access on this platform)
+geomean_instructions_per_query: n/a (no PMU access on this platform)
+worst_ns_per_query:    567446 ((768,96,256), clustered)
+best_ns_per_query:     102115 ((256,16,256), uniform)
+per_combo_geomean_ns:
+  (128,16,256) clustered  -> 103954 ns
+  (128,16,256) uniform    -> 105063 ns
+  (128,16,256) sparse     -> 105075 ns
+  (256,16,256) clustered  -> 103864 ns
+  (256,16,256) uniform    -> 102115 ns
+  (256,16,256) sparse     -> 106397 ns
+  (768,96,256) clustered  -> 567446 ns
+  (768,96,256) uniform    -> 552944 ns
+  (768,96,256) sparse     -> 547251 ns
+peak_mem_mb:           0.0
+total_seconds:         28.40
