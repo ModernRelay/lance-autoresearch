@@ -62,10 +62,11 @@ Implement the scalar reference kernel — the math, in plain Rust, no SIMD,
 no cleverness. This is what the agent's kernel is compared against. Mirror
 the public API of `kernels.rs` exactly.
 
-For float kernels, also export `max_abs_err(a, b)` and `topk_consistent(...)`
-(or analogues) — the comparison helpers the bench uses to assert
-near-bit-exact equivalence with `harness_common::MAX_ABS_ERR` /
-`TOPK_DIST_TOL`.
+For float kernels, also export `max_abs_err(a, b)` (or analogues) — the
+comparison helpers the bench uses to assert near-bit-exact equivalence
+with `harness_common::MAX_ABS_ERR`. The reference can also be a thin
+wrapper over `lance-snapshots` if the upstream function exists (as
+`pq-l2`'s does); that's the preferred pattern.
 
 For integer / byte kernels, the comparison is simpler — `assert_eq!` on the
 returned Arrow array. No tolerance constants needed.

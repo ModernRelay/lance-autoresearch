@@ -7,14 +7,21 @@ rules and principles that need to be in scope at all times.
 
 ## What this repo is
 
-Single-agent autoresearch harness for Lance hot-path kernels. Karpathy
-shape: edit one file (`crates/<target>/src/kernels.rs`), build, run a
-fixed bench, parse the output, decide keep-or-revert, commit. Loop
-until interrupted.
+Single-agent autoresearch harness for Lance hot-path kernels.
+Karpathy-shaped: edit one file (`crates/<target>/src/kernels.rs`), build,
+run a fixed bench, parse the output, decide keep-or-revert, commit. Loop
+until interrupted. Karpathy introduced this pattern in
+[`karpathy/autoresearch`](https://github.com/karpathy/autoresearch)
+(early 2026) for nanochat training; this repo adapts it for Lance kernels.
+
+It works for four reasons: per-trial wall-clock is bounded (~30s), the
+agent edits exactly one file (`kernels.rs`), the correctness oracle is
+deterministic, and the loop self-orchestrates. See README §
+"What autoresearch is, and why it works" for the longer pitch.
 
 The correctness oracle is **upstream Lance code itself**, vendored
-verbatim at a pinned SHA in `crates/lance-snapshots/`. Any kept commit
-is bit-equivalent to what Lance ships today. Wins port upstream as
+verbatim at a pinned SHA in `crates/lance-snapshots/`. Any kept commit is
+bit-equivalent to what Lance ships today. Wins port upstream as
 Apache-2.0 PRs by construction.
 
 ## Read what matches your intent

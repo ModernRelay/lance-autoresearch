@@ -93,10 +93,10 @@ sometimes algorithmic shape (e.g., a `criterion` patch release that
 changes its statistical model). Without a committed lockfile, timings on
 two checkouts of the same SHA can differ measurably.
 
-**Fix.** `research/lance-autoresearch/Cargo.lock` is checked in (no longer
-in `.gitignore`). All measurements use `cargo build --locked`. Crate
-updates are explicit `cargo update` commits with the timing impact
-re-measured immediately after.
+**Fix.** `Cargo.lock` is checked in at the repo root (no longer in
+`.gitignore`). All measurements use `cargo build --locked`. Crate updates
+are explicit `cargo update` commits with the timing impact re-measured
+immediately after.
 
 **Don't relax.** This is the difference between "I got 196k ns/query" and
 "someone else can reproduce 196k ns/query." Without it, the experiment is

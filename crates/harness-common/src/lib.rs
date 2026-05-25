@@ -11,7 +11,7 @@
 //! What is **not** here, and intentionally not abstracted:
 //!
 //! - A `Target` trait. Decode kernels (`bitpack`, `dictionary`, `FSST`) have
-//!   very different signatures than distance kernels (`PqKernel::probe_top_k`),
+//!   very different signatures than distance kernels (`PqKernel::compute_distances`),
 //!   and forcing them into one trait shape would either bloat the trait or
 //!   require erased boxing. Keep each target's API natural to its kernel.
 //!
@@ -31,7 +31,7 @@ pub use perf::{PerfCounters, PerfMeasurement};
 pub use prng::SplitMix64;
 pub use stats::{bootstrap_ci_geomean, geomean, iqr, is_statistically_faster, median};
 pub use sysinfo::peak_rss_mb;
-pub use tolerance::{MAX_ABS_ERR, TOPK_DIST_TOL};
+pub use tolerance::MAX_ABS_ERR;
 
 /// Per-trial wall-clock cap. Targets should `std::process::exit(3)` if exceeded
 /// so the agent's loop logs the trial as a timeout instead of a measurement.

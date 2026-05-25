@@ -49,7 +49,7 @@ A `Target` trait was the obvious-looking other alternative — express the
 common loop generically, plug in target-specific types. Rejected because:
 
 1. **Kernel signatures vary too much for a single trait shape.** PQ
-   `probe_top_k` returns `Vec<(u32, f32)>`. Bitpack decode returns an
+   `compute_distances` writes `&mut [f32]`. Bitpack decode returns an
    `IntArray`. FSST decode returns `Vec<u8>`. Predicate evaluation returns a
    `BooleanArray`. A unifying trait would need erased boxing or a wide
    associated-type surface, both of which obscure the actual hot path the
@@ -67,7 +67,8 @@ common loop generically, plug in target-specific types. Rejected because:
    value) or a complicated builder API (negative value).
 
 `harness-common` therefore exposes plumbing only: `SplitMix64`, `geomean`,
-`peak_rss_mb`, `MAX_ABS_ERR`, `TOPK_DIST_TOL`, `TIME_BUDGET_SECS`. Each
+`median`, `iqr`, `bootstrap_ci_geomean`, `is_statistically_faster`,
+`PerfCounters`, `peak_rss_mb`, `MAX_ABS_ERR`, `TIME_BUDGET_SECS`. Each
 target consumes what it needs. The shared loop contract is documented in
 `HARNESS.md`, not encoded in code.
 
@@ -81,10 +82,10 @@ The agent reads two files at session start:
   agent must keep stable, target-specific priors (which SIMD intrinsics tend
   to win on this kernel shape), the `results.tsv` column header.
 
-The shape mirrors how Karpathy's `nanochat-research` `program.md` works,
-factored across the dimension that varies (per target) vs. doesn't (the loop
-itself). Two files instead of one because copy-pasting the universal loop
-into every `program.md` makes them drift.
+The shape mirrors how Karpathy's [`autoresearch`](https://github.com/karpathy/autoresearch)
+`program.md` works, factored across the dimension that varies (per target)
+vs. doesn't (the loop itself). Two files instead of one because copy-pasting
+the universal loop into every `program.md` makes them drift.
 
 ## Decision: dataset-independent oracle every target
 
@@ -129,9 +130,10 @@ generalize.
 ## What's deliberately not abstracted
 
 - **Output format.** Each target prints its own field block. See above.
-- **`TopKHeap` and other small data structures.** When two targets need a
-  `TopKHeap`, the second one copies the first's. Three copies of a 30-line
-  struct is cheaper than one trait-erased indirection.
+- **Small data structures across targets.** When two targets need
+  something like the top-K selection helper in `run_experiment.rs`, the
+  second one copies the first's. Three copies of a 30-line helper is
+  cheaper than one trait-erased indirection.
 - **Test data shapes.** Each target's `inputs.rs` knows its own kernel's
   fixture shape. Sharing would require a generic `Fixture<Kernel>` trait,
   which would either be too narrow (forces every kernel into a `query +

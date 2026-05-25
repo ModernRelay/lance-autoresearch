@@ -5,25 +5,60 @@ hot-path kernels via LLM coding agents (Claude Code, Codex, Cursor),
 in the style of Andrej Karpathy's
 [`autoresearch`](https://github.com/karpathy/autoresearch) single-agent loop.
 
+## What autoresearch is, and why it works
+
+Andrej Karpathy [introduced](https://github.com/karpathy/autoresearch) a
+minimal shape for LLM-driven research loops in early 2026: give an AI
+coding agent a small, self-contained piece of code, a benchmark, and a
+`program.md` Markdown file sketching the priors. The agent runs a loop:
+edit one file, build, run the benchmark, parse the output, keep the change
+if it improved the metric, revert if not, commit, repeat. Overnight you
+get dozens of trials. His framing: *"You wake up in the morning to a log
+of experiments and (hopefully) a better model."*
+
+Karpathy's original target was single-GPU nanochat training (5-min trials,
+metric = `val_bpb`). This repo adapts the same shape for **Lance kernel
+optimization**: per-trial wall-clock is ~30 seconds, the metric is the
+geomean per-query latency of a fixed PQ benchmark, and the correctness
+oracle is **upstream Lance code itself** (vendored verbatim in
+`crates/lance-snapshots/`). Any kept commit is bit-equivalent to what Lance
+ships today — wins port upstream as Apache-2.0 PRs by construction.
+
+Why the autoresearch shape works:
+
+- **Fixed-cost trials** bound the agent's per-iteration budget. With ~30s
+  trials, ~100 iterations/hour is realistic without human input.
+- **One mutable file** keeps the diff scope tight. Karpathy's was
+  `train.py`; ours is `crates/<target>/src/kernels.rs`. Review is trivial;
+  the agent cannot accidentally drag in scope creep.
+- **Deterministic oracle** kills failed trials cleanly. The loop never
+  spirals into "fix this regression with another change."
+- **Self-orchestrating loop** means no external scheduler. The agent
+  reads `program.md`, sets up the branch and `results.tsv`, runs trials,
+  decides keep/revert, commits. The human walks away.
+- **Compounding via `lessons.md`** (gitignored, per-machine) means
+  findings from past trials inform future ones. The next session starts
+  smarter than the last.
+
 Each landed target is an independent Rust crate under `crates/`. The
 candidates below are listed as a roadmap — they have no code yet, only a
 `docs/targets/<name>.md` capsule when one exists. Spinning up a candidate is
 the [`docs/adding-a-target.md`](docs/adding-a-target.md) workflow.
 
-| Target | Status | Lance source area | What's optimized |
-|---|---|---|---|
-| [`crates/pq-l2`](crates/pq-l2) | landed | `lance-linalg::distance::l2`, PQ probe | PQ L2 distance: build LUT, probe codes, top-K |
-| `crates/pq-cosine`     | candidate | `lance-linalg::distance::cosine` | PQ cosine distance |
-| `crates/pq-dot`        | candidate | `lance-linalg::distance::dot` | PQ dot-product distance |
-| `crates/ivf-partition` | candidate | `lance-index::vector::ivf` partition select | IVF partition selection (centroid scan) |
-| `crates/fts-bm25`      | candidate | `lance-index::scalar::inverted` BM25 | FTS BM25 scoring inner loop |
-| `crates/bitpack`       | candidate | `lance-encoding::encodings::bitpack` | Bitpack integer decode |
-| `crates/dictionary`    | candidate | `lance-encoding::encodings::dictionary` | Dictionary decode |
-| `crates/fsst`          | candidate | `lance-encoding::encodings::fsst` | FSST string decode |
-| `crates/take`          | candidate | `lance-core::utils::take` | Take / gather kernel |
-| `crates/predicate`     | candidate | `lance-datafusion` filter eval | Predicate evaluation kernels |
-| `crates/posting-intersect` | candidate | `lance-index::scalar::inverted` | Posting list intersection (FTS AND) |
-| `crates/topk-merge`    | candidate | scan-merge | Top-K k-way merge |
+| Target | Status | Lance source area | What's optimized | Best result |
+|---|---|---|---|---|
+| [`crates/pq-l2`](crates/pq-l2) | landed | `lance-linalg::distance::l2`, PQ probe | PQ L2 distance: distance_table + per-vector distances | **−43% geomean vs upstream** (M1 Max, aarch64; bit-equivalent output; x86 untested) |
+| `crates/pq-cosine`     | candidate | `lance-linalg::distance::cosine` | PQ cosine distance | — |
+| `crates/pq-dot`        | candidate | `lance-linalg::distance::dot` | PQ dot-product distance | — |
+| `crates/ivf-partition` | candidate | `lance-index::vector::ivf` partition select | IVF partition selection (centroid scan) | — |
+| `crates/fts-bm25`      | candidate | `lance-index::scalar::inverted` BM25 | FTS BM25 scoring inner loop | — |
+| `crates/bitpack`       | candidate | `lance-encoding::encodings::bitpack` | Bitpack integer decode | — |
+| `crates/dictionary`    | candidate | `lance-encoding::encodings::dictionary` | Dictionary decode | — |
+| `crates/fsst`          | candidate | `lance-encoding::encodings::fsst` | FSST string decode | — |
+| `crates/take`          | candidate | `lance-core::utils::take` | Take / gather kernel | — |
+| `crates/predicate`     | candidate | `lance-datafusion` filter eval | Predicate evaluation kernels | — |
+| `crates/posting-intersect` | candidate | `lance-index::scalar::inverted` | Posting list intersection (FTS AND) | — |
+| `crates/topk-merge`    | candidate | scan-merge | Top-K k-way merge | — |
 
 The candidate targets are documented in [`docs/targets/`](docs/targets/) and can
 be added by following [`docs/adding-a-target.md`](docs/adding-a-target.md). The
@@ -40,6 +75,7 @@ Karpathy's three-file shape, applied per target:
 | `src/reference.rs`, `src/inputs.rs`, `src/lib.rs`, `src/bin/run_experiment.rs`, `benches/*.rs` | immutable | — |
 | `program.md` | human-iterated | the human, between runs |
 | `results.tsv` | append-only | the agent, per trial (gitignored) |
+| `lessons.md` | append-only | the agent, on load-bearing findings (gitignored) |
 
 The shared utilities — deterministic PRNG, geomean, peak-RSS readback,
 tolerance constants, time-budget — live in [`crates/harness-common`](crates/harness-common/src/lib.rs)

@@ -47,15 +47,32 @@ pre-computed state inside `PqKernel`, etc.
 pub struct PqKernel { /* agent's private fields */ }
 
 impl PqKernel {
-    pub fn new(shape: PqShape, codebook: &[f32]) -> Self;
+    /// Constructor — pre-process the codebook AND codes here (transposes,
+    /// L2Prepared SoA layout, cached c·c, etc.). Build cost is amortized
+    /// across all subsequent queries.
+    pub fn new(shape: PqShape, codebook: &[f32], codes_aos: &[u8], num_vectors: usize) -> Self;
+
+    /// Build the asymmetric L2 distance table for one query.
+    /// Mirrors upstream's `build_distance_table_l2`.
     pub fn distance_table(&self, query: &[f32], out: &mut [f32]);
-    pub fn probe_top_k(&self, table: &[f32], codes: &[u8], num_vectors: usize, k: usize) -> Vec<(u32, f32)>;
+
+    /// Compute per-vector L2 distances from the distance table.
+    /// Mirrors upstream's `compute_pq_distance`. Writes `num_vectors`
+    /// distances into `out`.
+    pub fn compute_distances(&self, table: &[f32], out: &mut [f32]);
+
+    pub fn num_vectors(&self) -> usize;
 }
 ```
 
-Pre-processing in `new` is free — the bench measures `distance_table +
-probe_top_k` per query, not per (build + query). Codebook transposes,
-cached `c·c`, packed LUTs, etc., should live in `new`.
+Top-K selection happens **outside** the kernel (in `run_experiment.rs`).
+That matches upstream's split: kernel writes per-vector distances; the
+caller selects top-K.
+
+Pre-processing in `new` is free — the bench measures
+`distance_table + compute_distances + top-K select` per query, not per
+(build + query). Codebook transposes, codes transposes, cached `c·c`,
+packed LUTs, etc., should live in `new`.
 
 ## What you can / cannot do
 

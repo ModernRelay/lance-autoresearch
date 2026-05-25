@@ -1,27 +1,33 @@
 //! IMMUTABLE entry point — the single command the agent invokes per trial.
 //!
-//! Run with:  `cargo run --release --bin run_experiment > run.log 2>&1`
+//! Run with:  `cargo run --release --bin run_experiment -p pq-l2 > run.log 2>&1`
+//! (or `-- --mode baseline` for the 3-pass baseline run).
 //!
 //! Two phases:
 //!
 //!   PHASE 1 — CORRECTNESS.  For every (shape × input distribution) in the
-//!   correctness battery, build the agent kernel and the scalar reference,
-//!   compare distance tables (max abs err must be ≤ MAX_ABS_ERR) and top-K
-//!   results (must be tie-tolerant equivalent within TOPK_DIST_TOL). Any
-//!   single failure → exit 2 ("correctness").
+//!   correctness battery, build the agent kernel and the upstream-vendored
+//!   reference, compare distance tables and per-vector distances. Both
+//!   max-abs-err must be ≤ MAX_ABS_ERR. Any single failure → exit 2.
 //!
 //!   PHASE 2 — SPEED.  For every (shape × data distribution) speed workload,
-//!   build the agent kernel once, then time `distance_table + probe_top_k`
-//!   for each query. Report per-(shape × distribution) geomean ns, plus
-//!   global geomean / worst / best across all timed queries.
+//!   build the agent kernel once, then time `distance_table +
+//!   compute_distances + top-K select` for each query. Report per-(shape ×
+//!   distribution) geomean ns, plus global geomean / worst / best across all
+//!   timed queries, plus a bootstrap 90% CI on the global geomean.
 //!
 //! Output (fixed format the agent can grep):
 //!
 //!     ---
 //!     correctness:           pass | fail
+//!     arch:                  aarch64 | x86_64
+//!     passes:                1 | 3
 //!     shapes_tested:         (128,16,256) (256,16,256) (768,96,256)
 //!     distributions_tested:  clustered uniform sparse
 //!     geomean_ns_per_query:  18234
+//!     geomean_ns_ci_90pct:   [17501, 19012]
+//!     median_ns_per_query:   12345
+//!     geomean_cycles_per_query: 54321 | n/a (no PMU access on this platform)
 //!     worst_ns_per_query:    24515 (768x96, sparse)
 //!     best_ns_per_query:     12876 (128x16, clustered)
 //!     peak_mem_mb:           28.4
@@ -160,8 +166,8 @@ fn print_pmc(label: &str, v: Option<u64>) {
 
 /// Select top-K smallest distances. Scans `distances` once, maintains a
 /// max-heap of capacity K (smaller-than-root is the admission test).
-/// Same shape as the old kernel-internal TopKHeap, just lives in the
-/// harness now to match upstream's split (compute distances → external top-K).
+/// Lives in the harness (not the kernel) to match upstream's split:
+/// kernel computes per-vector distances, top-K selection is external.
 fn select_top_k(distances: &[f32], k: usize, out: &mut Vec<(u32, f32)>) {
     out.clear();
     if k == 0 {

@@ -71,30 +71,3 @@ pub fn distances_max_abs_err(agent: &[f32], reference: &[f32]) -> f32 {
         .fold(0.0f32, f32::max)
 }
 
-/// Check top-K positional consistency by distance value.
-///
-/// At each rank `i`, asserts `|agent[i].dist - reference[i].dist| <= dist_tol`.
-/// Ids at the same rank may differ silently (heap eviction order vs sort
-/// stability for tied distances).
-pub fn topk_consistent(
-    agent: &[(u32, f32)],
-    reference: &[(u32, f32)],
-    dist_tol: f32,
-) -> Result<(), String> {
-    if agent.len() != reference.len() {
-        return Err(format!(
-            "topk length mismatch: agent={} reference={}",
-            agent.len(),
-            reference.len()
-        ));
-    }
-    for (i, ((a_id, a_d), (r_id, r_d))) in agent.iter().zip(reference).enumerate() {
-        if (a_d - r_d).abs() > dist_tol {
-            return Err(format!(
-                "topk[{i}] distance mismatch: agent=({a_id}, {a_d}) reference=({r_id}, {r_d}) | err={}",
-                (a_d - r_d).abs()
-            ));
-        }
-    }
-    Ok(())
-}

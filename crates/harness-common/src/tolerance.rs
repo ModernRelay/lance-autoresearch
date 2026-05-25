@@ -7,9 +7,6 @@
 //! assert strict bitwise equality and not use these constants.
 
 /// Maximum permitted absolute element error between agent kernel output and
-/// scalar reference output, for float kernels.
+/// reference output, for float kernels. Applied to both the distance table
+/// and the per-vector distances vec.
 pub const MAX_ABS_ERR: f32 = 1e-4;
-
-/// Maximum permitted distance error when comparing top-K results between
-/// agent kernel and scalar reference, for float kernels.
-pub const TOPK_DIST_TOL: f32 = 1e-4;
