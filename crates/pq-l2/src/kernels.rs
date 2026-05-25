@@ -38,53 +38,94 @@
 //     techniques (u8-LUT quantization, etc.) will fail the gate.
 
 use crate::PqShape;
-use lance_snapshots::pq::{build_distance_table_l2_into, compute_pq_distance_into, transpose};
+use lance_snapshots::pq::build_distance_table_l2_into;
 
 /// Kernel context. Pre-computed state derived from the codebook + codes lives here.
 pub struct PqKernel {
     shape: PqShape,
     codebook: Vec<f32>,
-    /// Pre-transposed codes (SoA `[num_sub_vectors][num_vectors]`). Same
-    /// layout upstream uses internally.
-    codes_soa: Vec<u8>,
+    /// Codes in natural AoS layout `[num_vectors][num_sub_vectors]`. The 4x
+    /// per-vector unroll below iterates m inside i (vector-major), with M
+    /// register-resident accumulators that only write to `out[i]` once per
+    /// vector. Avoids upstream's loop-swap SoA-distances write pressure.
+    codes_aos: Vec<u8>,
     num_vectors: usize,
 }
 
 impl PqKernel {
-    /// Build a kernel context. Pre-processing time is amortized across all
-    /// queries against this kernel.
-    ///
-    /// `codebook` layout: `[num_sub_vectors][num_centroids][sub_vector_dim]` flat.
-    /// `codes_aos` layout: `[num_vectors][num_sub_vectors]` flat (natural AoS).
     pub fn new(shape: PqShape, codebook: &[f32], codes_aos: &[u8], num_vectors: usize) -> Self {
         debug_assert_eq!(codebook.len(), shape.codebook_len());
         debug_assert_eq!(codes_aos.len(), num_vectors * shape.num_sub_vectors);
-        let codes_soa = transpose(codes_aos, num_vectors, shape.num_sub_vectors);
         Self {
             shape,
             codebook: codebook.to_vec(),
-            codes_soa,
+            codes_aos: codes_aos.to_vec(),
             num_vectors,
         }
     }
 
-    /// Write the asymmetric L2 distance table for one query into `out`.
-    ///
-    /// `out` layout: `[num_sub_vectors][num_centroids]` flat
-    /// (`out[m * num_centroids + k]`). Caller pre-allocates `out` with length
-    /// `shape.distance_table_len()`.
     pub fn distance_table(&self, query: &[f32], out: &mut [f32]) {
         debug_assert_eq!(query.len(), self.shape.dim);
         debug_assert_eq!(out.len(), self.shape.distance_table_len());
         build_distance_table_l2_into(&self.codebook, self.shape.num_sub_vectors, query, out);
     }
 
-    /// Compute L2 distance from the query (via the distance table) to every
-    /// vector. Writes `num_vectors` distances into `out`.
+    /// 4x unroll over per-vector AoS codes with register-resident accumulators.
+    /// Trades upstream's loop-swap (writes N=20k distances per inner m
+    /// iteration) for in-register accumulation (one write per vector).
     pub fn compute_distances(&self, table: &[f32], out: &mut [f32]) {
         debug_assert_eq!(table.len(), self.shape.distance_table_len());
         debug_assert_eq!(out.len(), self.num_vectors);
-        compute_pq_distance_into(table, self.shape.num_sub_vectors, &self.codes_soa, out);
+        let nsv = self.shape.num_sub_vectors;
+        let nc = self.shape.num_centroids;
+        let codes = self.codes_aos.as_slice();
+        let num_vectors = self.num_vectors;
+
+        // SAFETY: debug_asserts above pin codes.len() == num_vectors*nsv,
+        // table.len() == nsv*nc, out.len() == num_vectors.
+        let quads = num_vectors / 4;
+        for q in 0..quads {
+            let i = q * 4;
+            let off0 = i * nsv;
+            let off1 = off0 + nsv;
+            let off2 = off1 + nsv;
+            let off3 = off2 + nsv;
+            let mut a0 = 0.0f32;
+            let mut a1 = 0.0f32;
+            let mut a2 = 0.0f32;
+            let mut a3 = 0.0f32;
+            let mut tbl_row = 0usize;
+            for m in 0..nsv {
+                let c0 = unsafe { *codes.get_unchecked(off0 + m) } as usize;
+                let c1 = unsafe { *codes.get_unchecked(off1 + m) } as usize;
+                let c2 = unsafe { *codes.get_unchecked(off2 + m) } as usize;
+                let c3 = unsafe { *codes.get_unchecked(off3 + m) } as usize;
+                a0 += unsafe { *table.get_unchecked(tbl_row + c0) };
+                a1 += unsafe { *table.get_unchecked(tbl_row + c1) };
+                a2 += unsafe { *table.get_unchecked(tbl_row + c2) };
+                a3 += unsafe { *table.get_unchecked(tbl_row + c3) };
+                tbl_row += nc;
+            }
+            unsafe {
+                *out.get_unchecked_mut(i) = a0;
+                *out.get_unchecked_mut(i + 1) = a1;
+                *out.get_unchecked_mut(i + 2) = a2;
+                *out.get_unchecked_mut(i + 3) = a3;
+            }
+        }
+        // Tail for the residue (0..=3 leftover vectors).
+        let tail_start = quads * 4;
+        for i in tail_start..num_vectors {
+            let off = i * nsv;
+            let mut acc = 0.0f32;
+            let mut tbl_row = 0usize;
+            for m in 0..nsv {
+                let c = unsafe { *codes.get_unchecked(off + m) } as usize;
+                acc += unsafe { *table.get_unchecked(tbl_row + c) };
+                tbl_row += nc;
+            }
+            unsafe { *out.get_unchecked_mut(i) = acc };
+        }
     }
 
     pub fn num_vectors(&self) -> usize {
