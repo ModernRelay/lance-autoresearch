@@ -92,6 +92,10 @@ impl PostingIntersect {
 
 #[inline]
 fn pairwise_intersect(a: &[u32], b: &[u32], out: &mut Vec<u32>) {
+    // Branchless step: on uniform inputs the original `av < bv` branch
+    // mispredicts ~50%. Arithmetic comparisons let both counters advance
+    // unconditionally; the remaining `av == bv` branch is rare (only on
+    // actual intersections) and predictable.
     let mut i = 0usize;
     let mut j = 0usize;
     while i < a.len() && j < b.len() {
@@ -99,12 +103,8 @@ fn pairwise_intersect(a: &[u32], b: &[u32], out: &mut Vec<u32>) {
         let bv = b[j];
         if av == bv {
             out.push(av);
-            i += 1;
-            j += 1;
-        } else if av < bv {
-            i += 1;
-        } else {
-            j += 1;
         }
+        i += (av <= bv) as usize;
+        j += (av >= bv) as usize;
     }
 }
