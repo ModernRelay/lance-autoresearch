@@ -42,17 +42,17 @@ follows the [`docs/adding-a-target.md`](docs/adding-a-target.md) workflow.
 | `crates/fsst`          | candidate | `lance-encoding::encodings::fsst` | FSST string decode | pending |
 | `crates/take`          | candidate | `lance-core::utils::take` | Take / gather kernel | pending |
 | `crates/predicate`     | candidate | `lance-datafusion` filter eval | Predicate evaluation kernels | pending |
-| [`crates/posting-intersect`](crates/posting-intersect) | landed (baseline) | `lance-index::scalar::inverted` | Sorted u32 posting-list AND intersect | pending |
+| [`crates/posting-intersect`](crates/posting-intersect) | landed | `lance-index::scalar::inverted` | Sorted u32 posting-list AND intersect | **−81% geomean vs scalar K-way merge** (M1 Max, aarch64; bit-equivalent output; x86 fallback intact) |
 | `crates/topk-merge`    | candidate | scan-merge | Top-K k-way merge | pending |
 
 The candidate targets are documented in [`docs/targets/`](docs/targets/) and
 can be added by following [`docs/adding-a-target.md`](docs/adding-a-target.md).
 `pq-l2` and `posting-intersect` are landed; the rest wait for an agent to
-spin them up. `pq-l2` carries the headline finding (−43% geomean vs upstream
-on M1 Max); `posting-intersect` is at baseline, with priors in
-[`crates/posting-intersect/program.md`](crates/posting-intersect/program.md)
-pointing at the SIMD-intersect / galloping / bitmap algorithm families
-where the win is expected.
+spin them up. `pq-l2` carries a −43% geomean win on M1 Max;
+`posting-intersect` lands at −81% geomean via three trials (branchless
+merge step → galloping at ratio>16× → NEON cross-product SIMD merge for
+balanced pairs), each commit a self-contained upstream-PR candidate for
+`lance-index/src/scalar/inverted/intersect.rs`.
 
 ## The contract every target follows
 
