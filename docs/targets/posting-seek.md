@@ -2,34 +2,59 @@
 
 ## Status
 
-**Landed (kernel result); integration result inconclusive at 1M-doc bench scale.**
+**Kernel-level result in our harness; REJECTED as upstream Lance PR after
+integration validation at two scales (1M and 10M docs).**
 
 Microbench (this target, SHA `abe4dd3`): geomean 90 → 37 ns/seek
 (−58%), worst combo 3011 → 74 ns (−97%) on Large × Skip-deep. Three
 earlier gallop variants were rejected (mechanism notes in gitignored
 `lessons.md`).
 
-**Upstream integration (1M-doc bench, `rust/lance-index/benches/inverted.rs`):**
-The same kernel change ported to `wand.rs::next/shallow_next` produces
-NO statistically significant change at upstream's default 1M-doc bench
-scale. Criterion reports `p > 0.05` ("No change in performance
-detected") on both `invert_search` (10.504 ms → 9.98 ms, p=0.19) and
-`invert_phrase_search` (18.519 ms → 18.041 ms, p=0.71). See "Upstream
-integration" section below for the cost-fraction analysis.
+**Upstream integration: REJECTED as upstream PR.**
 
-This is the lesson that produced AGENTS.md principle 5 and
-`docs/adding-a-target.md` Step 0.5: the kernel is only ~2% of total
-query cost at 1M-doc scale, so even a 97% kernel speedup is bounded
-by ~2% production impact. **At larger corpora (10M+ docs, where common-
-term posting lists exceed ~8000 blocks), the cost-fraction grows and
-the asymptotic O(log N) advantage is expected to produce measurable
-end-to-end speedup.** Integration validation at 10M scale is the
-follow-up.
+The same kernel change ported to `wand.rs::next/shallow_next` was
+tested at two scales:
 
-The kernel change itself is correct (bit-equivalent output) and a
-low-risk, no-`unsafe`, no-SIMD, ~30-line replacement. Whether it
-ships as an upstream PR depends on the maintainer's appetite for a
-no-measured-win infra change with asymptotic correctness behind it.
+| Bench | 1M baseline | 1M patched | p | 10M baseline | 10M patched | p |
+|---|---|---|---|---|---|---|
+| `invert_search` (OR) | 10.50 ms | 9.98 ms | 0.19 | 65.06 ms | **69.71 ms** | **0.03** |
+| `invert_phrase_search` (AND) | 18.52 ms | 18.04 ms | 0.71 | 118.60 ms | 125.08 ms | 0.84 |
+
+**At 10M, `invert_search` REGRESSES by 12.7% with p=0.03 (statistically
+significant).** The patch is correct (output unchanged) but produces
+worse end-to-end performance than the linear baseline in upstream's
+own bench.
+
+This is the empirical answer to the cost-fraction question that
+AGENTS.md principle 5 was added to require. My initial analysis
+predicted the gallop would win at 10M because common-term posting
+lists grow to ~8000 blocks and Phase 1 would dominate. **The prediction
+was wrong:** WAND's block-max-score skipping (`and_move_to_next_block`
+at `wand.rs:960`) skips most of the posting list at the score level,
+so the modal `next(least_id)` call advances only 1–3 blocks — exactly
+the regime where gallop's per-call overhead loses to a tight linear
+scan. The asymptotic argument was true in isolation but irrelevant in
+context, because the score-skip pre-empts the deep-skip work the
+gallop would have saved.
+
+The kernel-level autoresearch microbench is **self-fulfilling**: we
+designed `skip_deep` to test the deep-skip regime, the gallop won
+there by construction. The microbench never modeled WAND's outer
+loop, so it never measured the shallow-skip regime that dominates
+production traffic.
+
+**Concrete revision to the methodology:** AGENTS.md principle 5 (cost-
+fraction estimate) and HARNESS.md "Integration validation" are
+necessary but not sufficient. Even with a correct cost-fraction
+estimate, the *access pattern* the kernel sees in production may
+differ from what the microbench imposes. Future targets must trace
+not just *where* the kernel is called but *how* — what input
+distribution the production caller actually generates.
+
+100M+ doc scale was considered but not pursued: the trend is clear,
+not regime-dependent. WAND's score-skip keeps `next()` calls shallow
+at any scale; the gallop's cheap-case overhead would continue to
+regress OR queries.
 
 ## What's optimized
 
@@ -164,10 +189,33 @@ Both deltas below criterion's `p < 0.05` significance threshold. Patch
 verified correct (output unchanged); just produces no measurable
 end-to-end speedup at this scale.
 
-**At 10M-doc scale:** measurement pending; see commit log for the bench
-at `TOTAL = 10_000_000` (in-flight at time of writing). The cost-
-fraction analysis above predicts ~15% measurable improvement on phrase
-search at this scale; the integration bench should confirm or refute.
+**At 10M-doc scale (`TOTAL = 10_000_000`):**
+
+| Bench | Baseline | Patched | Δ | p-value | Verdict |
+|---|---|---|---|---|---|
+| `invert_search` (OR, 15 tokens) | 65.06 ms | 69.71 ms | **+12.7%** | **0.03** | **REGRESSION** |
+| `invert_phrase_search` (AND, 2 tokens) | 118.60 ms | 125.08 ms | +3.8% | 0.84 | No change |
+
+**The patch regressed OR queries at 10M scale by 12.7% with p=0.03,
+contradicting the cost-fraction prediction of ~15% improvement.**
+
+Diagnosis: WAND's outer-loop block-max-score skipping
+(`and_move_to_next_block` at `wand.rs:960`) prunes most of the posting
+list at the score level before `next(least_id)` is called. As a result,
+the modal `next` call advances 1-3 blocks (shallow skip), not 8000
+blocks (deep skip). The gallop's per-call setup cost (5 reads vs 2-3
+for the bare linear scan) loses to the simpler baseline in the regime
+that actually dominates.
+
+The cost-fraction prediction assumed `next()` calls would be drawn
+from a "deep skip" distribution as corpus grows. The empirical access
+pattern is the opposite: deeper score-skip in the outer loop means
+*shallower* doc-id skips in the inner `next()` loop. Phase 1 cost
+grew (the kernel got bigger), but the gallop's overhead grew with it.
+
+**100M+ scales not pursued.** The trend is mechanism-driven, not
+scale-driven: WAND's score-skip preserves shallow access patterns at
+any corpus size.
 
 ## Known headroom (priors for the agent)
 

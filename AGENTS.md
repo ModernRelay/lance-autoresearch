@@ -81,20 +81,38 @@ defense burden is not.
    Step 0 enforces this; every target's capsule has a "Lance call
    site" section that quotes the caller code with SHA + line numbers.
 
-5. **Estimate cost-fraction before optimizing.** A kernel optimization
-   is bounded in production impact by the kernel's share of total
-   query cost. A 97% win on a kernel that's 1% of total query time is
-   a <1% production speedup. Do back-of-envelope arithmetic BEFORE
-   scaffolding — `docs/adding-a-target.md` Step 0.5 documents the
-   procedure: identify the kernel's per-call cost, calls per query,
-   and compute `(per-call × calls) / (total query)` at upstream's
-   bench scale. If the fraction is <5%, the headline production win
-   is bounded by 5% no matter how fast the kernel gets. Defer such
-   targets, refocus them to include more dominant kernels, or accept
-   that the work is methodological rather than production-impactful.
-   posting-seek surfaced this lesson the hard way: −97% on the seek
-   primitive, 0% (within noise) on Lance's actual FTS bench at 1M-doc
-   scale, because the kernel was <2% of total query cost.
+5. **Estimate cost-fraction AND access pattern before optimizing.**
+   A kernel optimization is bounded in production impact by (a) the
+   kernel's share of total query cost AND (b) whether the
+   *distribution of inputs* the kernel sees in production matches the
+   distribution your microbench imposes. Both can be wrong
+   independently. Do back-of-envelope arithmetic BEFORE scaffolding —
+   `docs/adding-a-target.md` Step 0.5 documents the procedure:
+   identify the kernel's per-call cost, calls per query, total query
+   cost, AND the input distribution the production caller actually
+   generates.
+
+   posting-seek surfaced both failure modes the hard way:
+
+   - **Cost-fraction wrong (1M):** −97% on the seek primitive's
+     microbench, 0% (within noise) on Lance's actual FTS bench at 1M
+     scale, because the kernel was <2% of total query cost.
+
+   - **Access-pattern wrong (10M):** The microbench's `skip_deep`
+     pattern (jump half the list per call) does NOT match production:
+     WAND's outer-loop block-max-score skipping (`wand.rs:960`)
+     pre-empts the deep skips, so the modal `next(least_id)` advances
+     1-3 blocks, not thousands. The gallop's per-call overhead, which
+     was invisible at 1M because the kernel was small, became visible
+     at 10M and *regressed* OR queries by +12.7% (p=0.03). The
+     microbench measured a primitive Lance's WAND traversal does not
+     actually exercise in production.
+
+   The fix for both: trace not just *where* the kernel is called but
+   *how* — what input distribution the production caller actually
+   generates. The cost-fraction is (kernel cost given production
+   inputs) / (total query cost), NOT (kernel cost given microbench
+   inputs).
 
 6. **Substrate first.** Don't reinvent what upstream Lance, LLVM
    autovec, or hardware prefetchers already do. Read `lance-snapshots/`
