@@ -55,21 +55,32 @@ noise, not signal. The rules below flow from this.
    for mechanism; if you can't articulate it, you don't understand the
    win, and it's likely to regress in a future codegen change.
 
-4. **Substrate first.** Don't reinvent what upstream Lance, LLVM
+4. **Mirror upstream's surface, don't invent.** If upstream Lance
+   doesn't expose your proposed kernel as a callable function, that's
+   a load-bearing signal, not an inconvenience. It usually means the
+   operation is fused into a larger loop (scoring, iteration,
+   decompression). Inventing a clean surface around it produces a
+   microbenchmark that doesn't match production cost paths. Trace
+   the actual hot caller in upstream BEFORE scaffolding; design the
+   kernel API to mirror what gets called. `docs/adding-a-target.md`
+   Step 0 enforces this; every target's capsule has a "Lance call
+   site" section that quotes the caller code with SHA + line numbers.
+
+5. **Substrate first.** Don't reinvent what upstream Lance, LLVM
    autovec, or hardware prefetchers already do. Read `lance-snapshots/`
    for upstream's current pattern before proposing the same idea via
    different syntax. The same thing in different code carries no value.
 
-5. **One hypothesis per trial.** Don't combine "transpose codebook" +
+6. **One hypothesis per trial.** Don't combine "transpose codebook" +
    "add NEON FMA" in one diff. You won't know which contributed. Land
    them as two trials; the composition becomes its own third trial.
 
-6. **No new dependencies.** Adding `criterion-extras` or `simdeez`
+7. **No new dependencies.** Adding `criterion-extras` or `simdeez`
    etc. moves the optimization into the dependency. The harness
    measures kernels in isolation; importing a SIMD library defeats
    the purpose.
 
-7. **The bit-exact gate IS the contract.** Failing it means your
+8. **The bit-exact gate IS the contract.** Failing it means your
    change produces different output than upstream's, which is silent
    recall regression if shipped. Don't override "just this once." If
    you want a lossy track, surface it to the human as a separate

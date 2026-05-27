@@ -164,9 +164,22 @@ After reading `HARNESS.md` and the target's `program.md`:
 
 The inner trial loop is bounded by deterministic per-trial cost. Web fetches
 inside the loop break that bound and contaminate iteration latency. Background
-research happens at two specific points OUTSIDE the loop:
+research happens at three specific points OUTSIDE the loop:
 
-1. **Session start, once.** After reading `program.md` + `lessons.md`, if the
+1. **At scaffold time, before the first session on a new target.** The human
+   or agent adding a target MUST do the upstream hot-path trace
+   (`docs/adding-a-target.md` Step 0) before running `scripts/scaffold-target.sh`.
+   This is itself a background-research action: read upstream Lance caller
+   code, identify the primitive operation that dominates the hot path, quote
+   the call site (SHA + path + line numbers) in the per-target capsule's
+   "Lance call site" section. Treat this as part of session setup, not
+   optional. Cost ≤30 min; the only structural insurance against shipping a
+   target whose kernel surface doesn't match what Lance actually calls.
+   `posting-intersect` skipped this step and ended up measuring a kernel
+   surface that Lance's WAND traversal does not call; the lesson is now
+   load-bearing.
+
+2. **Session start, once.** After reading `program.md` + `lessons.md`, if the
    target's priors list cites named papers or algorithms (e.g. "Lemire 2015
    SIMD-galloping", "PForDelta", "BP128", "FSST paper"), or if `lessons.md`
    contains an open `RESEARCH:` marker, do a focused fetch:
@@ -179,7 +192,7 @@ research happens at two specific points OUTSIDE the loop:
    - Total time budget: ≤10 minutes. If a paper requires deep reading to be
      useful, summarize what you got and move on.
 
-2. **On-stuck, between trials.** After **3 consecutive rejected trials on the
+3. **On-stuck, between trials.** After **3 consecutive rejected trials on the
    same target**, pause the inner loop and do one focused research pass:
    re-read the last 10 `results.tsv` rows, identify the regime where the
    kernel is stuck (e.g. "FP-ADD latency-bound on aarch64, write-port limited

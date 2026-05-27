@@ -18,6 +18,44 @@ scalar reference, this harness is the wrong fit. See [`design.md`](design.md)
 
 ## Steps
 
+### 0. Trace the upstream hot path (BEFORE scaffolding)
+
+Find the primitive operation that dominates the target's caller code path
+in upstream Lance. This is the single highest-leverage step in the workflow;
+skipping it produces microbenchmarks that don't transfer to production. The
+`posting-intersect` target shipped without Step 0 and ended up measuring a
+kernel surface that Lance's WAND traversal does not call.
+
+Concretely:
+
+1. **Identify the upstream function(s) the target nominally optimizes.**
+   For `pq-l2` this was `compute_pq_distance` + `build_distance_table_l2`.
+   For a hypothetical decoder target it's the `decompress_*` function.
+2. **Grep upstream Lance for the file(s) that *call* those functions.**
+   Read the caller's tightest loop. The `gh` CLI works against
+   `lance-format/lance` at the pinned SHA from `crates/lance-snapshots/src/lib.rs`:
+   ```
+   gh api 'search/code?q=<function_name>+repo:lance-format/lance' \
+     --jq '.items[] | "\(.path)"'
+   gh api 'repos/lance-format/lance/contents/<path>?ref=<sha>' \
+     --jq '.content' | base64 -d
+   ```
+3. **Confirm the proposed kernel API mirrors what the caller calls.** If
+   your proposed signature (e.g. `fn intersect(lists: &[&[u32]], ...)`)
+   doesn't match any call site you found, **stop and redesign before
+   scaffolding.** The absence of a clean upstream function for your
+   surface usually means the operation is fused with something else
+   (scoring, decompression, iteration); inventing a clean surface measures
+   a primitive Lance doesn't use.
+4. **Record the call-site excerpt in the per-target capsule's "Lance call
+   site" section** (see Step 10 below for the format). If no direct call
+   site exists, the capsule must say so honestly; that admission triggers
+   a scoping conversation before code lands.
+
+Time budget: ≤30 minutes. Cheapest insurance the harness offers. See
+[`../HARNESS.md`](../HARNESS.md) § "Background research" item 1 for why
+this fires before scaffolding.
+
 ### 1. Scaffold the crate
 
 ```bash
@@ -148,11 +186,40 @@ Per-target agent skill, layered on top of `HARNESS.md`. Sections:
 
 A short doc covering:
 
+- Status (candidate / landed / has-results)
 - What's optimized (one sentence)
+- **Lance call site** (REQUIRED, the output of Step 0)
 - Upstream Lance source pointers (rev, file paths, function names)
 - Oracle definition (bit-exact / `max_abs_err`)
 - Speed workload shape (what shapes × distributions span)
-- Status (candidate / landed / has-results)
+
+The "Lance call site" section quotes the upstream caller code that drives
+this kernel, anchoring the per-target work to a real production hot path.
+Format:
+
+```
+## Lance call site
+
+Upstream `lance-format/lance` at SHA `<sha>`,
+`rust/lance-<crate>/src/<path>.rs`:
+
+    // lines N..M
+    <quoted excerpt of the tightest caller loop>
+
+This kernel's `<method>` corresponds to <line N> in <caller>.
+```
+
+If no direct call site exists for the kernel surface as proposed, the
+section MUST say so honestly:
+
+> No direct call site in current upstream; this kernel is
+> [a refactor target / a primitive for external systems / etc.].
+
+That admission is load-bearing. It signals that the target is measuring
+something Lance doesn't currently call, which should trigger a scoping
+conversation (and probably a sibling `<target>-<correct-shape>` capsule)
+before further code lands. See `docs/targets/posting-intersect.md` for
+an example of this honest scope-note pattern.
 
 ### 11. Verify end-to-end
 
@@ -186,6 +253,13 @@ one commit, each target's history should be independently revertible.
 
 ## Common gotchas
 
+- **Proposed kernel surface doesn't match an upstream call site.** The
+  single highest-impact failure mode. Catches itself only if you actually
+  do Step 0. `posting-intersect` shipped without Step 0 and ended up
+  measuring `intersect(&[&[u32]], ...)`, a surface Lance's WAND traversal
+  does not call. The trials are clean kernel engineering but the −81%
+  geomean is on a primitive that doesn't appear in production. Step 0
+  exists to prevent this.
 - **Forgetting the empty `[workspace]` block** at the root means cargo walks
   up to the omnigraph parent workspace. Already handled; just don't remove it.
 - **Per-target `Cargo.toml` referencing the wrong `harness-common` path.**

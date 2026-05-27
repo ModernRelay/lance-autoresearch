@@ -34,6 +34,43 @@ the agent may pre-process anything (codebook transpose, codes transpose,
 `L2Prepared` SoA layout, cached `c·c`, packed LUTs) and amortize over
 queries; build cost is excluded from per-query timing.
 
+## Lance call site
+
+Upstream `lance-format/lance` at SHA `5cf70b27b3ad38ecdcd1547b7af385e05f67598a`,
+`rust/lance-index/src/vector/pq/storage.rs`:
+
+```rust
+// lines 862-870: PQDistCalculator::new — builds the distance table per query
+let distance_table = match distance_type {
+    DistanceType::L2 | DistanceType::Cosine => {
+        build_distance_table_l2(codebook, num_bits, num_sub_vectors, query)
+    }
+    DistanceType::Dot => {
+        build_distance_table_dot(codebook, num_bits, num_sub_vectors, query)
+    }
+    _ => unimplemented!("DistanceType is not supported: {:?}", distance_type),
+};
+```
+
+```rust
+// lines 921-929: PQDistCalculator::distance_all — computes distances to all codes
+fn distance_all(&self, k_hint: usize) -> Vec<f32> {
+    match self.distance_type {
+        DistanceType::L2 => compute_pq_distance(
+            &self.distance_table,
+            self.num_bits,
+            self.num_sub_vectors,
+            self.pq_code.values(),
+            k_hint,
+        ),
+        ...
+```
+
+This kernel's `PqKernel::distance_table` corresponds to line 864
+(`build_distance_table_l2`); `PqKernel::compute_distances` corresponds to
+line 923 (`compute_pq_distance`). Hot caller: `PQDistCalculator` is the
+`DistCalculator` impl used by IVF-PQ probe in `lance-index::vector::ivf`.
+
 ## Upstream Lance source
 
 Vendored verbatim in `crates/lance-snapshots/src/pq.rs` (at the SHA pinned
