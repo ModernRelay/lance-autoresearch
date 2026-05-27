@@ -55,12 +55,38 @@ impl<'a> PostingSeek<'a> {
             return None;
         }
 
-        // Phase 1: linear sidecar scan to pick the candidate block.
+        // Phase 1: hybrid linear-budget + McIlroy gallop sidecar scan.
+        //
+        // First LINEAR_BUDGET=4 linear steps keep the cheap-skip cost
+        // identical to the baseline scan (1-block skip = 2 sidecar
+        // reads; 4-block skip = 5 reads). If the linear budget exhausts
+        // AND the next block still qualifies, switch to McIlroy's
+        // always-committing exponential search + halving refine for the
+        // O(log N) asymptotic win on deep skips.
+        const LINEAR_BUDGET: usize = 4;
         let mut block_idx = self.index / BLOCK_SIZE;
-        while block_idx + 1 < num_blocks
-            && self.list.block_first_doc_id[block_idx + 1] <= least_id
+        let sidecar = &self.list.block_first_doc_id;
+
+        let mut budget = LINEAR_BUDGET;
+        while budget > 0
+            && block_idx + 1 < num_blocks
+            && sidecar[block_idx + 1] <= least_id
         {
             block_idx += 1;
+            budget -= 1;
+        }
+        if budget == 0 && block_idx + 1 < num_blocks && sidecar[block_idx + 1] <= least_id {
+            let mut step = 1usize;
+            while block_idx + step < num_blocks && sidecar[block_idx + step] <= least_id {
+                block_idx += step;
+                step *= 2;
+            }
+            while step > 1 {
+                step /= 2;
+                if block_idx + step < num_blocks && sidecar[block_idx + step] <= least_id {
+                    block_idx += step;
+                }
+            }
         }
         self.index = self.index.max(block_idx * BLOCK_SIZE);
 
