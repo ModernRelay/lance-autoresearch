@@ -77,30 +77,19 @@ A kernel is **kept** iff:
      from passing on noise.
    - Both CIs come from the bootstrap_ci_geomean field printed as
      `geomean_*_ci_90pct: [lo, hi]`.
-3. **Worst-combo sanity cap.** `worst_ns_per_*` ≤ 1.05 × the previous best-kept
-   kernel's worst. Single-number cap that catches catastrophic regressions on
-   any one combo regardless of compensation elsewhere.
-4. **Aggregate trade-off ratio.** Across all per-combo geomeans, the sum of
-   absolute improvements (in nanoseconds) must be at least 10× the sum of
-   absolute regressions. Captures "wins must clearly dominate losses" without
-   forcing per-combo uniformity, which would reject legitimate asymmetric
-   trades like −2931 ns on a deep-skip combo at the cost of +39 ns on a
-   shallow-skip combo. Robust to the ~20% run-to-run variance in per-combo
-   measurements at sub-30 ns scales on M1.
-5. `total_seconds` ≤ 600 (the per-trial cap; exceed it → `std::process::exit(3)`).
-6. Build clean: `cargo build --release` and
-   `cargo clippy --release --all-targets -- -D warnings` both succeed.
+3. **Worst-combo sanity cap.** `worst_ns_per_*` ≤ 1.05 × previous best
+   worst. Single-number cap; catches catastrophic single-combo regressions.
+4. **Aggregate trade-off ratio.** Sum of absolute improvements ≥10× sum of
+   absolute regressions across per-combo geomeans. Accepts asymmetric trades
+   (big deep-case win, small cheap-case loss) without forcing uniformity.
+5. `total_seconds` ≤ 600 (`std::process::exit(3)` on exceed).
+6. Build clean: `cargo build --release` + `cargo clippy --release
+   --all-targets -- -D warnings`.
 
-**Apply the gate via `scripts/check-keep-gate.py`**, not by hand. The script
-takes two `run.log` files (previous best, trial) and emits PASS/FAIL with the
-exact violations cited. Exit codes: 0 pass, 1 fail (revert), 2 correctness
-fail (revert), 3 parse error. Using the script keeps the decision consistent
-across sessions; doing it by hand has historically produced inconsistent
-verdicts on asymmetric trade-offs (see git history of `posting-seek` trials).
-
-Thresholds (`WORST_COMBO_PCT_MAX = 0.05`, `TRADE_OFF_RATIO = 10.0`) live in
-the script's header constants and are tuneable there. Document any change to
-these values with a commit that explains the empirical motivation.
+**Apply via `scripts/check-keep-gate.py <previous-best.log> <run.log>`.**
+Exit codes: 0 keep, 1 revert, 2 correctness fail, 3 parse error. Don't apply
+by hand — sessions diverge on asymmetric trades. Thresholds are tunable
+constants at the top of the script.
 
 ### Baseline vs trial measurements
 
@@ -182,107 +171,46 @@ After reading `HARNESS.md` and the target's `program.md`:
     Format: free-form Markdown; one entry per lesson with date, trial
     commit SHA, the mechanism, and the implication. Keep entries short.
 
-## Background research (papers, public benchmarks, blog posts)
+## Background research (papers, public benchmarks)
 
-The inner trial loop is bounded by deterministic per-trial cost. Web fetches
-inside the loop break that bound and contaminate iteration latency. Background
-research happens at three specific points OUTSIDE the loop:
+Web fetches inside the inner loop contaminate iteration latency. Three
+points OUTSIDE the loop where fetches are allowed:
 
-1. **At scaffold time, before the first session on a new target.** The human
-   or agent adding a target MUST do the upstream hot-path trace
-   (`docs/adding-a-target.md` Step 0) before running `scripts/scaffold-target.sh`.
-   This is itself a background-research action: read upstream Lance caller
-   code, identify the primitive operation that dominates the hot path, quote
-   the call site (SHA + path + line numbers) in the per-target capsule's
-   "Lance call site" section. Treat this as part of session setup, not
-   optional. Cost ≤30 min; the only structural insurance against shipping a
-   target whose kernel surface doesn't match what Lance actually calls.
-   `posting-intersect` skipped this step and ended up measuring a kernel
-   surface that Lance's WAND traversal does not call; the lesson is now
-   load-bearing.
+1. **Scaffold time** (before `scripts/scaffold-target.sh`): upstream
+   hot-path trace per `docs/adding-a-target.md` Step 0. Quote the call
+   site (SHA + path + line) in the capsule. ≤30 min.
+2. **Session start**: if `program.md` cites named algorithms or
+   `lessons.md` has open `RESEARCH:` markers, skim 1–3 papers and
+   append one-line summaries to `lessons.md` under `## References`.
+   ≤10 min.
+3. **On-stuck**: after 3 consecutive rejected trials on the same
+   target, pause the loop, identify the regime, fetch 1–2 sources,
+   record in `lessons.md`, then propose a new hypothesis.
 
-2. **Session start, once.** After reading `program.md` + `lessons.md`, if the
-   target's priors list cites named papers or algorithms (e.g. "Lemire 2015
-   SIMD-galloping", "PForDelta", "BP128", "FSST paper"), or if `lessons.md`
-   contains an open `RESEARCH:` marker, do a focused fetch:
-   - Skim 1–3 papers/posts relevant to the next planned hypothesis.
-   - Extract: the algorithm's mechanism (one sentence), the conditions under
-     which it wins (input shape / distribution), and the published speedup
-     vs. a stated baseline.
-   - Append each to `lessons.md` under a `## References` section as one
-     bullet: `[citation] — mechanism — wins when X — published Yx vs Z`.
-   - Total time budget: ≤10 minutes. If a paper requires deep reading to be
-     useful, summarize what you got and move on.
-
-3. **On-stuck, between trials.** After **3 consecutive rejected trials on the
-   same target**, pause the inner loop and do one focused research pass:
-   re-read the last 10 `results.tsv` rows, identify the regime where the
-   kernel is stuck (e.g. "FP-ADD latency-bound on aarch64, write-port limited
-   when output width grows"), and fetch 1–2 sources targeting that regime.
-   Record findings in `lessons.md` under `## On-stuck research, <date>`.
-   Then propose a new hypothesis informed by what you read.
-
-**Never** fetch inside the inner loop (edit → build → bench → commit). A
-single web fetch can add 30s of variable latency; that destroys the
-per-trial cost bound the harness depends on. If a hypothesis requires an
-unfamiliar technique, do the fetch ONCE between trials, record what you
-learned, then enter the loop.
-
-**Provenance.** Cite every external source in the commit message of the
-trial it informs: `"galloping-based skip (Lemire 2017, §3.2): -22% on
-skewed-pair, no regression on balanced"`. Reviewers (you, future agents,
-the human porting upstream) need to retrace the reasoning.
-
-**Tools.** Use `WebFetch` for known URLs and `WebSearch` for discovery. If
-the target's `program.md` lists canonical references, prefer those over
-ad-hoc search; the human has already vetted them.
+Cite external sources in the relevant trial's commit message body.
+Use `WebFetch` for known URLs and `WebSearch` for discovery.
 
 ## Integration validation (once per target, before claiming a Lance win)
 
-A microbench win is a kernel-level result. To claim a production
-speedup that an upstream maintainer would care about, validate against
-upstream Lance's own benchmark at upstream's scale BEFORE marking the
-target as having produced "a Lance win" in the README target table:
+A microbench win is a kernel result. A Lance win requires upstream
+integration. Procedure (`docs/adding-a-target.md` § 12.5 has the
+shell recipe):
 
-1. Clone upstream at the pinned SHA (`crates/lance-snapshots/src/lib.rs`):
-   ```
-   git clone --depth 1 https://github.com/lance-format/lance /tmp/lance-bench
-   cd /tmp/lance-bench
-   git fetch --depth 1 origin <pinned-sha> && git checkout <pinned-sha>
-   ```
-2. Build the upstream bench that exercises this kernel (identified by
-   `docs/adding-a-target.md` Step 0.5): typically in `rust/lance/benches/`
-   or `rust/lance-<crate>/benches/`. Filter to the relevant bench
-   function with `--bench '<regex>'` to skip irrelevant setup.
-3. Capture baseline numbers by running the bench binary directly:
-   `<target>/release/deps/<bench>-<hash> --bench '<filter>'`. Going
-   through `cargo bench` triggers another rebuild; direct invocation
-   reuses the existing release binary.
-4. Apply the kernel change to upstream's source (port `kernels.rs` to
-   the appropriate upstream file). Run `cargo test --release -p <crate>`
-   to verify correctness against upstream's own tests.
-5. Re-bench. Compare baseline vs patched with criterion's p-value.
-6. Record both numbers in the target's capsule under a new "Upstream
-   integration" section: the microbench delta AND the integration delta.
+1. Clone `lance-format/lance` at the pinned SHA (from
+   `crates/lance-snapshots/src/lib.rs`).
+2. Build the bench that exercises this kernel (identified by Step 0.5).
+3. Capture baseline; invoke the bench binary directly to skip cargo's
+   rebuild churn.
+4. Apply the kernel change to upstream; run `cargo test --release -p
+   <crate>` for correctness.
+5. Re-bench; record baseline + patched + criterion p-value in the
+   capsule's "Upstream integration" section.
 
-**If the integration delta is below criterion's significance threshold
-(p > 0.05), the kernel win is real but its production impact is
-unverified at upstream's current bench scale.** Document this honestly
-in the capsule and README target table: do NOT claim a Lance speedup
-based on the microbench alone. Either:
-
-- Argue scale: if the asymptotic win materializes only at 100×
-  upstream's bench scale, say so explicitly with the cost-model
-  arithmetic. The PR's value becomes "low-risk infra change for
-  billion-scale users," not "X% faster Lance."
-- Defer: drop the target's status to `kernel-result-only` and move on
-  to a target with higher cost-fraction.
-- Refocus: the kernel may be too narrow; the production hot path may
-  be something larger that this kernel sits inside. Consider whether
-  the target's surface should be widened.
-
-The autoresearch loop produces kernel results. The integration phase
-proves whether those kernel results matter at upstream's scale.
+If `p > 0.05`, the kernel win is real but production impact is
+unverified. **Do NOT claim a Lance speedup from microbench alone.**
+Either argue scale (with cost-model arithmetic), defer the target, or
+refocus its surface. posting-seek went further and *regressed* +12.7%
+on OR queries at 10M scale (p=0.03), forcing outright rejection.
 
 ## Never stop
 

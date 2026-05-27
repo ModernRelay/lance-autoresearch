@@ -34,20 +34,13 @@ Don't read everything. Pick the row.
 ## Principles (apply when the bright-line rules are silent)
 
 The meta-principle: **every kept commit should be a Lance upstream PR
-you'd defend in review, AND produce a measurable end-to-end speedup
-at upstream's own bench scale.** A microbench win is a kernel-level
-result. Integration validation (HARNESS.md § "Integration validation")
-turns it into a production result. Wins that beat the microbench but
-disappear in the integration measurement are kernel exercises, not
-upstream wins. The rules below flow from this.
-
-**Hunt big wins, not noise-floor wins.** Each session's value is
-proportional to the absolute time saved at production scale. A 30%
-kernel win on a kernel that's 1% of total query cost moves the
-production number by less than 0.3%. Before scaffolding (principle
-5) and before claiming a Lance win (HARNESS.md integration phase),
-do the back-of-envelope math. The trials are cheap; the upstream-PR
-defense burden is not.
+you'd defend in review AND produce a measurable end-to-end speedup at
+upstream's bench scale.** A microbench win that disappears in
+integration measurement is a kernel exercise, not a Lance win. Hunt
+big wins — session value is proportional to absolute time saved at
+production scale, not relative kernel percentages. The checks run
+BEFORE scaffolding (principle 5, cost-fraction + access-pattern) and
+AFTER landing trials (HARNESS.md § Integration validation).
 
 1. **Correctness > simplicity > performance, lexicographic.** Never
    trade correctness for simpler code. Never trade simplicity for
@@ -82,37 +75,18 @@ defense burden is not.
    site" section that quotes the caller code with SHA + line numbers.
 
 5. **Estimate cost-fraction AND access pattern before optimizing.**
-   A kernel optimization is bounded in production impact by (a) the
-   kernel's share of total query cost AND (b) whether the
-   *distribution of inputs* the kernel sees in production matches the
-   distribution your microbench imposes. Both can be wrong
-   independently. Do back-of-envelope arithmetic BEFORE scaffolding —
-   `docs/adding-a-target.md` Step 0.5 documents the procedure:
-   identify the kernel's per-call cost, calls per query, total query
-   cost, AND the input distribution the production caller actually
-   generates.
+   Production impact is bounded by (a) the kernel's share of total
+   query cost AND (b) whether the production caller's input
+   distribution matches what your microbench imposes. Do the
+   back-of-envelope math BEFORE scaffolding per
+   `docs/adding-a-target.md` Step 0.5. Trace not just *where* the
+   kernel is called but *how* — the distribution the production hot
+   path generates is what determines the integration delta.
 
-   posting-seek surfaced both failure modes the hard way:
-
-   - **Cost-fraction wrong (1M):** −97% on the seek primitive's
-     microbench, 0% (within noise) on Lance's actual FTS bench at 1M
-     scale, because the kernel was <2% of total query cost.
-
-   - **Access-pattern wrong (10M):** The microbench's `skip_deep`
-     pattern (jump half the list per call) does NOT match production:
-     WAND's outer-loop block-max-score skipping (`wand.rs:960`)
-     pre-empts the deep skips, so the modal `next(least_id)` advances
-     1-3 blocks, not thousands. The gallop's per-call overhead, which
-     was invisible at 1M because the kernel was small, became visible
-     at 10M and *regressed* OR queries by +12.7% (p=0.03). The
-     microbench measured a primitive Lance's WAND traversal does not
-     actually exercise in production.
-
-   The fix for both: trace not just *where* the kernel is called but
-   *how* — what input distribution the production caller actually
-   generates. The cost-fraction is (kernel cost given production
-   inputs) / (total query cost), NOT (kernel cost given microbench
-   inputs).
+   posting-seek surfaced both failures: kernel was <2% of total at 1M
+   (cost-fraction → 0% production change); microbench's `skip_deep`
+   pattern didn't match WAND's score-skip-induced shallow skips at
+   10M (access-pattern → **+12.7% REGRESSION** on OR queries, p=0.03).
 
 6. **Substrate first.** Don't reinvent what upstream Lance, LLVM
    autovec, or hardware prefetchers already do. Read `lance-snapshots/`
