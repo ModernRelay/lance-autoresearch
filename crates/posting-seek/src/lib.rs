@@ -76,8 +76,8 @@ impl PostingShape {
 /// adjacent blocks are non-overlapping (block `k+1`'s first doc id is
 /// strictly greater than block `k`'s last).
 pub struct PostingList {
-    pub block_first_doc_id: Vec<u32>,
-    pub blocks: Vec<u32>,
+    pub(crate) block_first_doc_id: Vec<u32>,
+    pub(crate) blocks: Vec<u32>,
 }
 
 impl PostingList {

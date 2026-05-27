@@ -129,16 +129,34 @@ def main() -> int:
     prev = parse_log(prev_path)
     cur = parse_log(cur_path)
 
-    for label, parsed in (("previous", prev), ("trial", cur)):
-        missing = [k for k in ("correctness", "geomean", "ci", "worst") if parsed[k] is None]
-        if missing:
-            print(f"error: {label} log missing fields: {missing}", file=sys.stderr)
-            return 3
-
-    # Gate 1: correctness.
+    # Gate 1: correctness (check first; correctness-fail logs omit the
+    # speed fields, so the missing-fields check would otherwise mask
+    # exit code 2 behind a parse-error exit 3).
+    if cur["correctness"] is None:
+        print("error: trial log missing correctness field", file=sys.stderr)
+        return 3
     if cur["correctness"] != "pass":
         print(f"FAIL: correctness = {cur['correctness']} (must be 'pass')")
         return 2
+
+    # Now require full fields on both sides; a passing trial without speed
+    # data is a malformed run.log.
+    required = ("correctness", "geomean", "ci", "worst")
+    for label, parsed in (("previous", prev), ("trial", cur)):
+        missing = [k for k in required if parsed[k] is None]
+        if missing:
+            print(f"error: {label} log missing fields: {missing}", file=sys.stderr)
+            return 3
+        if not parsed["combos"]:
+            # Gate 4 requires per-combo data on both sides; silently
+            # disabling it would let trials pass without the aggregate
+            # trade-off check.
+            print(
+                f"error: {label} log has no per_combo_geomean_ns rows; "
+                f"cannot apply Gate 4",
+                file=sys.stderr,
+            )
+            return 3
 
     failures: list[str] = []
 

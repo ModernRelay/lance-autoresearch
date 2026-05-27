@@ -107,7 +107,6 @@ pub fn correctness_battery(seed: u64) -> Vec<CorrectnessCase> {
     ];
 
     for &shape in SHAPES {
-        let list = build_posting_list(shape);
         for (edge, label) in cases {
             let mut rng = SplitMix64::new(mix_seeds(&[
                 seed,
@@ -115,15 +114,14 @@ pub fn correctness_battery(seed: u64) -> Vec<CorrectnessCase> {
                 edge_hash(*edge),
             ]));
             let ops = build_correctness_ops(shape, *edge, &mut rng);
-            // Each correctness case gets its own owned list, since
-            // PostingList isn't Copy; cheap-enough at correctness sizes.
+            // Each correctness case gets its own owned list (PostingList
+            // isn't Copy); cheap-enough at correctness sizes.
             out.push(CorrectnessCase {
                 label,
                 shape,
                 list: build_posting_list(shape),
                 ops,
             });
-            let _ = list; // suppress unused; list is per-case re-built
         }
     }
 

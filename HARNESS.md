@@ -193,18 +193,27 @@ Use `WebFetch` for known URLs and `WebSearch` for discovery.
 ## Integration validation (once per target, before claiming a Lance win)
 
 A microbench win is a kernel result. A Lance win requires upstream
-integration. Procedure (`docs/adding-a-target.md` § 12.5 has the
-shell recipe):
+integration. Procedure:
 
-1. Clone `lance-format/lance` at the pinned SHA (from
-   `crates/lance-snapshots/src/lib.rs`).
-2. Build the bench that exercises this kernel (identified by Step 0.5).
-3. Capture baseline; invoke the bench binary directly to skip cargo's
-   rebuild churn.
-4. Apply the kernel change to upstream; run `cargo test --release -p
-   <crate>` for correctness.
-5. Re-bench; record baseline + patched + criterion p-value in the
-   capsule's "Upstream integration" section.
+```bash
+# 1. Clone upstream at the pinned SHA (from crates/lance-snapshots/src/lib.rs)
+git clone --depth 1 https://github.com/lance-format/lance /tmp/lance-bench
+cd /tmp/lance-bench
+git fetch --depth 1 origin <pinned-sha> && git checkout <pinned-sha>
+
+# 2. Build the bench that exercises this kernel (Step 0.5 identifies it).
+cargo build --release --bench <name> -p <crate>
+
+# 3. Capture baseline numbers by invoking the bench binary directly
+#    (skips cargo's rebuild churn that --bench would trigger):
+target/release/deps/<bench>-<hash> --bench '<regex-filter>'
+
+# 4. Apply the kernel change to upstream's source; verify correctness:
+cargo test --release -p <crate>
+
+# 5. Re-bench. Record baseline + patched + criterion p-value in the
+#    target's capsule under a new "Upstream integration" section.
+```
 
 If `p > 0.05`, the kernel win is real but production impact is
 unverified. **Do NOT claim a Lance speedup from microbench alone.**
