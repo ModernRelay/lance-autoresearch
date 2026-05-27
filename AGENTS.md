@@ -42,12 +42,15 @@ noise, not signal. The rules below flow from this.
    marginal performance. A 1% speedup that requires 200 lines of
    unsafe is worse than the original.
 
-2. **Wins must transfer across shapes AND distributions.** A change
-   that improves one combo by 30% but regresses another by 5% fails
-   the keep gate even if global geomean improves. Lance users run many
-   shapes; an aarch64-only or high-dim-only win must be gated by
-   `#[cfg(target_arch = ...)]` or shape-specific dispatch, never
-   silently merged into a portable path.
+2. **Wins must transfer across shapes AND distributions.** Lance users
+   run many shapes; an aarch64-only or high-dim-only win must be gated
+   by `#[cfg(target_arch = ...)]` or shape-specific dispatch, never
+   silently merged into a portable path. The exact threshold for
+   "regression on one combo offset by win on another" is codified in
+   `HARNESS.md` § keep-gate item 4 (aggregate trade-off ratio: wins
+   must dominate losses by ≥10× in absolute ns) and enforced by
+   `scripts/check-keep-gate.py`. Don't apply per-combo thresholds by
+   hand; running the script is the contract.
 
 3. **Mechanism > vibes.** When a trial wins, explain WHY in the commit
    message. `"4x unroll: -19% from FP-ADD latency bound on M1"` is a

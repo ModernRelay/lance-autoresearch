@@ -77,11 +77,30 @@ A kernel is **kept** iff:
      from passing on noise.
    - Both CIs come from the bootstrap_ci_geomean field printed as
      `geomean_*_ci_90pct: [lo, hi]`.
-3. `worst_ns_per_*` ≤ 1.05 × the previous best-kept kernel's worst (wall-clock,
-   regardless of platform, the worst-case guard is platform-portable).
-4. `total_seconds` ≤ 600 (the per-trial cap; exceed it → `std::process::exit(3)`).
-5. Build clean: `cargo build --release` and
+3. **Worst-combo sanity cap.** `worst_ns_per_*` ≤ 1.05 × the previous best-kept
+   kernel's worst. Single-number cap that catches catastrophic regressions on
+   any one combo regardless of compensation elsewhere.
+4. **Aggregate trade-off ratio.** Across all per-combo geomeans, the sum of
+   absolute improvements (in nanoseconds) must be at least 10× the sum of
+   absolute regressions. Captures "wins must clearly dominate losses" without
+   forcing per-combo uniformity, which would reject legitimate asymmetric
+   trades like −2931 ns on a deep-skip combo at the cost of +39 ns on a
+   shallow-skip combo. Robust to the ~20% run-to-run variance in per-combo
+   measurements at sub-30 ns scales on M1.
+5. `total_seconds` ≤ 600 (the per-trial cap; exceed it → `std::process::exit(3)`).
+6. Build clean: `cargo build --release` and
    `cargo clippy --release --all-targets -- -D warnings` both succeed.
+
+**Apply the gate via `scripts/check-keep-gate.py`**, not by hand. The script
+takes two `run.log` files (previous best, trial) and emits PASS/FAIL with the
+exact violations cited. Exit codes: 0 pass, 1 fail (revert), 2 correctness
+fail (revert), 3 parse error. Using the script keeps the decision consistent
+across sessions; doing it by hand has historically produced inconsistent
+verdicts on asymmetric trade-offs (see git history of `posting-seek` trials).
+
+Thresholds (`WORST_COMBO_PCT_MAX = 0.05`, `TRADE_OFF_RATIO = 10.0`) live in
+the script's header constants and are tuneable there. Document any change to
+these values with a commit that explains the empirical motivation.
 
 ### Baseline vs trial measurements
 
@@ -128,8 +147,11 @@ After reading `HARNESS.md` and the target's `program.md`:
    cargo run --release --bin run_experiment -p <target> > run.log 2>&1
    ```
 
-6. **Parse and decide.** Extract the universal fields plus any per-target
-   fields. Compute deltas vs. the last-kept row. Apply the keep criteria above.
+6. **Parse and decide.** Invoke `scripts/check-keep-gate.py <previous-best.log>
+   <run.log>`. The script applies the formal keep-gate (correctness, CI
+   non-overlap on geomean, worst-combo cap at 5%, aggregate trade-off
+   ratio ≥10×) and emits PASS/FAIL with violations cited. Exit 0 → keep;
+   exit 1 → revert; exit 2 → correctness fail; exit 3 → parse error.
 
 7. **Log.** Append one row to `results.tsv` matching the target's header.
 
