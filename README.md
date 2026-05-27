@@ -36,7 +36,7 @@ follows the [`docs/adding-a-target.md`](docs/adding-a-target.md) workflow.
 | `crates/pq-cosine`     | candidate | `lance-linalg::distance::cosine` | PQ cosine distance | pending |
 | `crates/pq-dot`        | candidate | `lance-linalg::distance::dot` | PQ dot-product distance | pending |
 | `crates/ivf-partition` | candidate | `lance-index::vector::ivf` partition select | IVF partition selection (centroid scan) | pending |
-| `crates/fts-bm25`      | candidate | `lance-index::scalar::inverted` BM25 | FTS BM25 scoring inner loop | pending |
+| `crates/fts-bm25`      | candidate (Step 0 ✓) | `lance-index::scalar::inverted::scorer` `Scorer::doc_weight` | FTS BM25 scoring inner loop | pending; clean call site at `wand.rs:252` via the `Scorer` trait — ready to scaffold |
 | `crates/bitpack`       | candidate | `lance-encoding::encodings::bitpack` | Bitpack integer decode | pending |
 | `crates/dictionary`    | candidate | `lance-encoding::encodings::dictionary` | Dictionary decode | pending |
 | `crates/fsst`          | candidate | `lance-encoding::encodings::fsst` | FSST string decode | pending |
