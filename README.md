@@ -43,23 +43,24 @@ follows the [`docs/adding-a-target.md`](docs/adding-a-target.md) workflow.
 | `crates/take`          | candidate | `lance-core::utils::take` | Take / gather kernel | pending |
 | `crates/predicate`     | candidate | `lance-datafusion` filter eval | Predicate evaluation kernels | pending |
 | [`crates/posting-intersect`](crates/posting-intersect) | landed (off-path; see capsule) | `lance-index::scalar::inverted` (no direct call site) | Sorted u32 posting-list AND intersect | **−81% geomean vs scalar K-way merge** (M1 Max, aarch64; bit-equivalent output; x86 fallback intact). Kernel surface not in current Lance hot path; see [`posting-seek`](docs/targets/posting-seek.md) for the Lance-aligned shape. |
-| [`posting-seek`](docs/targets/posting-seek.md) | capsule only | `lance-index::scalar::inverted::wand` (`next`, `shallow_next`) | Block-aware seek over compressed posting list | pending; capsule documents the gallop-the-block-scan opportunity in `wand.rs::next` |
+| [`crates/posting-seek`](crates/posting-seek) | landed | `lance-index::scalar::inverted::wand` (`next`, `shallow_next`) | Block-aware seek over compressed posting list | **−97% on worst-case Skip-deep × Large** (3011 → 74 ns), −58% geomean. Hybrid linear-budget + McIlroy gallop. M1 Max, aarch64; portable scalar code, no SIMD |
 | `crates/topk-merge`    | candidate | scan-merge | Top-K k-way merge | pending |
 
 The candidate targets are documented in [`docs/targets/`](docs/targets/) and
 can be added by following [`docs/adding-a-target.md`](docs/adding-a-target.md).
-`pq-l2` and `posting-intersect` are landed; `posting-seek` is documented
-as a capsule but not scaffolded; the rest wait for an agent to spin them
-up. `pq-l2` carries a −43% geomean win on M1 Max. `posting-intersect`
-lands at −81% geomean via three trials (branchless merge → galloping at
-ratio>16× → NEON cross-product SIMD merge), but a retroactive Step 0
-trace (see `docs/adding-a-target.md`) showed its kernel surface is not in
-Lance's current WAND hot path; the trial wins are clean kernel engineering
-on a primitive Lance would need to refactor to use. `posting-seek` is the
-Lance-aligned follow-up: ~5-line gallop change inside `wand.rs::next` that
-ports the gallop mechanism directly into the actual hot path. Step 0 was
-added to the workflow in response to this mis-scope; future targets won't
-ship without their "Lance call site" capsule section filed first.
+`pq-l2`, `posting-intersect`, and `posting-seek` are landed; the rest
+wait for an agent to spin them up. `pq-l2` carries a −43% geomean win
+on M1 Max. `posting-intersect` lands at −81% geomean via three trials
+(branchless merge → galloping at ratio>16× → NEON cross-product SIMD
+merge), but a retroactive Step 0 trace (see `docs/adding-a-target.md`)
+showed its kernel surface is not in Lance's current WAND hot path —
+the trial wins are clean kernel engineering on a primitive Lance would
+need a refactor to use. `posting-seek` is the Lance-aligned follow-up:
+a hybrid linear-budget + McIlroy gallop change in `wand.rs::next` that
+drops the worst-case seek (Large × Skip-deep) from 3011 ns → 74 ns,
+~30 LOC, no `unsafe`, no SIMD. Step 0 of the workflow was added in
+response to `posting-intersect`'s mis-scope; future targets won't ship
+without their "Lance call site" capsule section filed first.
 
 ## The contract every target follows
 

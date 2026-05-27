@@ -1,11 +1,23 @@
-# Target: `posting-seek` (candidate, capsule only)
+# Target: `posting-seek`
 
 ## Status
 
-**Candidate, capsule only.** The target this session should have scoped
-instead of `posting-intersect` for direct Lance impact. Scaffold deferred
-to a future session; this capsule exists to lock in the design intent
-while the upstream-validation context is fresh.
+**Landed.** Scaffolded and run end-to-end with one kept trial.
+
+Baseline: geomean 90 ns/seek (CI [84, 96]), worst combo 3011 ns
+(Large × Skip-deep) — a linear block scan over the sidecar.
+
+Kept trial (SHA `abe4dd3`): hybrid linear-budget + McIlroy gallop.
+Geomean 37 ns/seek (CI [36, 38], strictly non-overlapping baseline).
+Worst combo 74 ns (Large × Skip-deep) — a **97% reduction on the worst-
+case seek pattern**, which is the production-relevant case for WAND
+AND traversal where rare-term-AND-common-term queries scatter the
+common-term cursor deep into its posting list. Three earlier gallop
+variants were rejected (mechanism notes in gitignored `lessons.md`).
+
+This is the upstream-PR-shaped change: replace the linear `while`
+block scan in `wand.rs::next` (and `shallow_next`) with the hybrid.
+~30 lines, no `unsafe`, no new dependencies, bit-equivalent output.
 
 ## What's optimized
 
