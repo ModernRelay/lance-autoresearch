@@ -56,6 +56,58 @@ Time budget: ≤30 minutes. Cheapest insurance the harness offers. See
 [`../HARNESS.md`](../HARNESS.md) § "Background research" item 1 for why
 this fires before scaffolding.
 
+### 0.5. Estimate cost-fraction (also BEFORE scaffolding)
+
+Step 0 found the kernel's call site. Step 0.5 estimates **what fraction
+of an end-to-end Lance query that call site actually consumes at
+upstream's bench scale**. This is the most-skipped step in the workflow
+and the single biggest source of "the microbench wins but production
+doesn't move" failures. `posting-seek` shipped a kept hybrid with -97%
+on its microbench and 0% (within noise) on upstream's actual FTS
+bench — because the kernel was only ~2% of total query cost at
+upstream's 1M-doc bench scale, so even a 100× kernel speedup is
+bounded by 2% production impact.
+
+Procedure:
+
+1. **Find the upstream bench that exercises this kernel.** Look in
+   `rust/lance/benches/` and `rust/lance-<crate>/benches/` for a bench
+   whose hot path goes through your kernel's call site. Read the
+   bench's setup to understand its scale (corpus size, query mix,
+   etc.).
+2. **Estimate per-call kernel cost.** From the upstream code shape
+   plus any inline comments or profiling notes, rough out the per-call
+   cost in nanoseconds. For an unoptimized linear loop, that's roughly
+   `loop_iterations × 3-5 ns/iter` on M1.
+3. **Estimate calls per query.** From the upstream caller's loop
+   structure: how many times does it invoke your kernel per typical
+   query?
+4. **Total query cost from upstream bench numbers.** Run the upstream
+   bench once at its default scale, or read past benchmark results.
+5. **Compute the fraction:** `(per-call cost × calls/query) / total
+   query cost`. If <5%, the headline production win is bounded by 5%
+   regardless of how good your kernel optimization is.
+
+If the fraction is <5%:
+
+- **Defer the target.** The work is methodology, not production
+  impact.
+- **Refocus.** The kernel may be too narrow. Consider whether the
+  target's surface should expand to include the more dominant kernel
+  it sits inside.
+- **Argue scale.** If the kernel cost grows superlinearly with corpus
+  size and the bench-vs-production scale gap is large (e.g., bench at
+  1M docs, production at 1B), the cost-fraction at production scale
+  may be much higher than at bench scale. Document this with cost-
+  model arithmetic in the capsule's "Cost fraction" section. The PR
+  becomes "low-risk infra change for billion-scale users," not "X%
+  faster Lance."
+
+Document the result in the target's capsule under a new "Cost
+fraction" section with explicit numbers. Future agents reading the
+capsule see the ceiling on the headline number before scaffolding any
+trials.
+
 ### 1. Scaffold the crate
 
 ```bash

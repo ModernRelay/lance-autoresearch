@@ -43,7 +43,7 @@ follows the [`docs/adding-a-target.md`](docs/adding-a-target.md) workflow.
 | `crates/take`          | candidate | `lance-core::utils::take` | Take / gather kernel | pending |
 | `crates/predicate`     | candidate | `lance-datafusion` filter eval | Predicate evaluation kernels | pending |
 | [`crates/posting-intersect`](crates/posting-intersect) | landed (off-path; see capsule) | `lance-index::scalar::inverted` (no direct call site) | Sorted u32 posting-list AND intersect | **−81% geomean vs scalar K-way merge** (M1 Max, aarch64; bit-equivalent output; x86 fallback intact). Kernel surface not in current Lance hot path; see [`posting-seek`](docs/targets/posting-seek.md) for the Lance-aligned shape. |
-| [`crates/posting-seek`](crates/posting-seek) | landed | `lance-index::scalar::inverted::wand` (`next`, `shallow_next`) | Block-aware seek over compressed posting list | **−97% on worst-case Skip-deep × Large** (3011 → 74 ns), −58% geomean. Hybrid linear-budget + McIlroy gallop. M1 Max, aarch64; portable scalar code, no SIMD |
+| [`crates/posting-seek`](crates/posting-seek) | kernel landed; integration inconclusive at 1M | `lance-index::scalar::inverted::wand` (`next`, `shallow_next`) | Block-aware seek over compressed posting list | Microbench −97% worst-case / −58% geomean; **upstream's 1M-doc FTS bench shows no statistically significant change (p > 0.05)** because the kernel is ~2% of total query cost at that scale. Asymptotic win at 10M+ doc scale pending validation. See [capsule](docs/targets/posting-seek.md) "Cost fraction" + "Upstream integration" |
 | `crates/topk-merge`    | candidate | scan-merge | Top-K k-way merge | pending |
 
 The candidate targets are documented in [`docs/targets/`](docs/targets/) and

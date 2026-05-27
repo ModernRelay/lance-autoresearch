@@ -34,8 +34,20 @@ Don't read everything. Pick the row.
 ## Principles (apply when the bright-line rules are silent)
 
 The meta-principle: **every kept commit should be a Lance upstream PR
-you'd defend in review.** Wins that wouldn't survive that bar are
-noise, not signal. The rules below flow from this.
+you'd defend in review, AND produce a measurable end-to-end speedup
+at upstream's own bench scale.** A microbench win is a kernel-level
+result. Integration validation (HARNESS.md § "Integration validation")
+turns it into a production result. Wins that beat the microbench but
+disappear in the integration measurement are kernel exercises, not
+upstream wins. The rules below flow from this.
+
+**Hunt big wins, not noise-floor wins.** Each session's value is
+proportional to the absolute time saved at production scale. A 30%
+kernel win on a kernel that's 1% of total query cost moves the
+production number by less than 0.3%. Before scaffolding (principle
+5) and before claiming a Lance win (HARNESS.md integration phase),
+do the back-of-envelope math. The trials are cheap; the upstream-PR
+defense burden is not.
 
 1. **Correctness > simplicity > performance, lexicographic.** Never
    trade correctness for simpler code. Never trade simplicity for
@@ -69,21 +81,36 @@ noise, not signal. The rules below flow from this.
    Step 0 enforces this; every target's capsule has a "Lance call
    site" section that quotes the caller code with SHA + line numbers.
 
-5. **Substrate first.** Don't reinvent what upstream Lance, LLVM
+5. **Estimate cost-fraction before optimizing.** A kernel optimization
+   is bounded in production impact by the kernel's share of total
+   query cost. A 97% win on a kernel that's 1% of total query time is
+   a <1% production speedup. Do back-of-envelope arithmetic BEFORE
+   scaffolding — `docs/adding-a-target.md` Step 0.5 documents the
+   procedure: identify the kernel's per-call cost, calls per query,
+   and compute `(per-call × calls) / (total query)` at upstream's
+   bench scale. If the fraction is <5%, the headline production win
+   is bounded by 5% no matter how fast the kernel gets. Defer such
+   targets, refocus them to include more dominant kernels, or accept
+   that the work is methodological rather than production-impactful.
+   posting-seek surfaced this lesson the hard way: −97% on the seek
+   primitive, 0% (within noise) on Lance's actual FTS bench at 1M-doc
+   scale, because the kernel was <2% of total query cost.
+
+6. **Substrate first.** Don't reinvent what upstream Lance, LLVM
    autovec, or hardware prefetchers already do. Read `lance-snapshots/`
    for upstream's current pattern before proposing the same idea via
    different syntax. The same thing in different code carries no value.
 
-6. **One hypothesis per trial.** Don't combine "transpose codebook" +
+7. **One hypothesis per trial.** Don't combine "transpose codebook" +
    "add NEON FMA" in one diff. You won't know which contributed. Land
    them as two trials; the composition becomes its own third trial.
 
-7. **No new dependencies.** Adding `criterion-extras` or `simdeez`
+8. **No new dependencies.** Adding `criterion-extras` or `simdeez`
    etc. moves the optimization into the dependency. The harness
    measures kernels in isolation; importing a SIMD library defeats
    the purpose.
 
-8. **The bit-exact gate IS the contract.** Failing it means your
+9. **The bit-exact gate IS the contract.** Failing it means your
    change produces different output than upstream's, which is silent
    recall regression if shipped. Don't override "just this once." If
    you want a lossy track, surface it to the human as a separate

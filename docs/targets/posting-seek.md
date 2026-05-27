@@ -2,22 +2,34 @@
 
 ## Status
 
-**Landed.** Scaffolded and run end-to-end with one kept trial.
+**Landed (kernel result); integration result inconclusive at 1M-doc bench scale.**
 
-Baseline: geomean 90 ns/seek (CI [84, 96]), worst combo 3011 ns
-(Large × Skip-deep) — a linear block scan over the sidecar.
+Microbench (this target, SHA `abe4dd3`): geomean 90 → 37 ns/seek
+(−58%), worst combo 3011 → 74 ns (−97%) on Large × Skip-deep. Three
+earlier gallop variants were rejected (mechanism notes in gitignored
+`lessons.md`).
 
-Kept trial (SHA `abe4dd3`): hybrid linear-budget + McIlroy gallop.
-Geomean 37 ns/seek (CI [36, 38], strictly non-overlapping baseline).
-Worst combo 74 ns (Large × Skip-deep) — a **97% reduction on the worst-
-case seek pattern**, which is the production-relevant case for WAND
-AND traversal where rare-term-AND-common-term queries scatter the
-common-term cursor deep into its posting list. Three earlier gallop
-variants were rejected (mechanism notes in gitignored `lessons.md`).
+**Upstream integration (1M-doc bench, `rust/lance-index/benches/inverted.rs`):**
+The same kernel change ported to `wand.rs::next/shallow_next` produces
+NO statistically significant change at upstream's default 1M-doc bench
+scale. Criterion reports `p > 0.05` ("No change in performance
+detected") on both `invert_search` (10.504 ms → 9.98 ms, p=0.19) and
+`invert_phrase_search` (18.519 ms → 18.041 ms, p=0.71). See "Upstream
+integration" section below for the cost-fraction analysis.
 
-This is the upstream-PR-shaped change: replace the linear `while`
-block scan in `wand.rs::next` (and `shallow_next`) with the hybrid.
-~30 lines, no `unsafe`, no new dependencies, bit-equivalent output.
+This is the lesson that produced AGENTS.md principle 5 and
+`docs/adding-a-target.md` Step 0.5: the kernel is only ~2% of total
+query cost at 1M-doc scale, so even a 97% kernel speedup is bounded
+by ~2% production impact. **At larger corpora (10M+ docs, where common-
+term posting lists exceed ~8000 blocks), the cost-fraction grows and
+the asymptotic O(log N) advantage is expected to produce measurable
+end-to-end speedup.** Integration validation at 10M scale is the
+follow-up.
+
+The kernel change itself is correct (bit-equivalent output) and a
+low-risk, no-`unsafe`, no-SIMD, ~30-line replacement. Whether it
+ships as an upstream PR depends on the maintainer's appetite for a
+no-measured-win infra change with asymptotic correctness behind it.
 
 ## What's optimized
 
@@ -98,6 +110,64 @@ Three distributions (seek-call pattern):
   walks ~N/2 sidecar entries; gallop probes log₂(N) then bisects.
   **This is where the asymptotic win materializes.** For Large × Skip-deep:
   linear ~40,000 probes, gallop ~17 probes, ~2,300× theoretical.
+
+## Cost fraction (per AGENTS.md principle 5)
+
+This section was added retroactively after the integration validation
+revealed the kernel was a small fraction of total query cost at
+upstream's bench scale. Future targets should file this section
+BEFORE scaffolding.
+
+At **1M-doc bench scale** (upstream `rust/lance-index/benches/inverted.rs`,
+`TOTAL = 1_000_000`):
+- Common-term Zipf posting list: ~100k docs → ~800 blocks
+- Per `next()` call: linear scan walks up to ~800 sidecar reads × ~4 ns
+  = ~3 µs
+- Calls per query: ~100 (block-skip WAND skips most docs)
+- Per-query kernel cost: ~300 µs
+- Total query cost (measured): 18 ms (phrase) / 10.5 ms (OR)
+- **Kernel fraction: ~2% (phrase) / ~3% (OR)**
+
+A 100× kernel speedup at this scale is bounded by ~3% production
+impact. Matches the empirical result: criterion reports
+"no change in performance detected" (p > 0.05) on both benches.
+
+At **10M-doc scale (estimated):**
+- Common-term posting list: ~1M docs → ~8000 blocks
+- Per `next()` call: linear ~32 µs, gallop ~50 ns → savings ~32 µs/call
+- Per-query savings: ~3 ms (assuming ~100 calls/query)
+- Total query cost: estimated ~30 ms
+- **Kernel fraction: ~15% (phrase) — measurable**
+
+At **100M-doc scale (won't fit in RAM on dev machine):**
+- Common-term posting list: ~10M docs → ~80,000 blocks
+- Per call: linear ~320 µs, gallop ~80 ns → savings ~320 µs/call
+- **Kernel fraction: ~30%+**
+
+The gallop's asymptotic O(log N) vs O(N) advantage materializes only
+at scales where common-term posting lists are large. Upstream's
+default 1M-doc bench is below the threshold.
+
+## Upstream integration
+
+Validation against upstream `lance-format/lance` @ SHA `5cf70b27`,
+bench `rust/lance-index/benches/inverted.rs`.
+
+**At 1M-doc scale (upstream's default):**
+
+| Bench | Baseline | Patched | Δ | p-value | Verdict |
+|---|---|---|---|---|---|
+| `invert_search` (OR, 15 tokens) | 10.504 ms | 9.980 ms | −4.9% | 0.19 | No change |
+| `invert_phrase_search` (AND, 2 tokens) | 18.519 ms | 18.041 ms | −1.0% | 0.71 | No change |
+
+Both deltas below criterion's `p < 0.05` significance threshold. Patch
+verified correct (output unchanged); just produces no measurable
+end-to-end speedup at this scale.
+
+**At 10M-doc scale:** measurement pending; see commit log for the bench
+at `TOTAL = 10_000_000` (in-flight at time of writing). The cost-
+fraction analysis above predicts ~15% measurable improvement on phrase
+search at this scale; the integration bench should confirm or refute.
 
 ## Known headroom (priors for the agent)
 

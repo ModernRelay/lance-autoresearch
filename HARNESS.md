@@ -237,6 +237,53 @@ the human porting upstream) need to retrace the reasoning.
 the target's `program.md` lists canonical references, prefer those over
 ad-hoc search; the human has already vetted them.
 
+## Integration validation (once per target, before claiming a Lance win)
+
+A microbench win is a kernel-level result. To claim a production
+speedup that an upstream maintainer would care about, validate against
+upstream Lance's own benchmark at upstream's scale BEFORE marking the
+target as having produced "a Lance win" in the README target table:
+
+1. Clone upstream at the pinned SHA (`crates/lance-snapshots/src/lib.rs`):
+   ```
+   git clone --depth 1 https://github.com/lance-format/lance /tmp/lance-bench
+   cd /tmp/lance-bench
+   git fetch --depth 1 origin <pinned-sha> && git checkout <pinned-sha>
+   ```
+2. Build the upstream bench that exercises this kernel (identified by
+   `docs/adding-a-target.md` Step 0.5): typically in `rust/lance/benches/`
+   or `rust/lance-<crate>/benches/`. Filter to the relevant bench
+   function with `--bench '<regex>'` to skip irrelevant setup.
+3. Capture baseline numbers by running the bench binary directly:
+   `<target>/release/deps/<bench>-<hash> --bench '<filter>'`. Going
+   through `cargo bench` triggers another rebuild; direct invocation
+   reuses the existing release binary.
+4. Apply the kernel change to upstream's source (port `kernels.rs` to
+   the appropriate upstream file). Run `cargo test --release -p <crate>`
+   to verify correctness against upstream's own tests.
+5. Re-bench. Compare baseline vs patched with criterion's p-value.
+6. Record both numbers in the target's capsule under a new "Upstream
+   integration" section: the microbench delta AND the integration delta.
+
+**If the integration delta is below criterion's significance threshold
+(p > 0.05), the kernel win is real but its production impact is
+unverified at upstream's current bench scale.** Document this honestly
+in the capsule and README target table: do NOT claim a Lance speedup
+based on the microbench alone. Either:
+
+- Argue scale: if the asymptotic win materializes only at 100×
+  upstream's bench scale, say so explicitly with the cost-model
+  arithmetic. The PR's value becomes "low-risk infra change for
+  billion-scale users," not "X% faster Lance."
+- Defer: drop the target's status to `kernel-result-only` and move on
+  to a target with higher cost-fraction.
+- Refocus: the kernel may be too narrow; the production hot path may
+  be something larger that this kernel sits inside. Consider whether
+  the target's surface should be widened.
+
+The autoresearch loop produces kernel results. The integration phase
+proves whether those kernel results matter at upstream's scale.
+
 ## Never stop
 
 Keep going until interrupted. Each loop iteration is one hypothesis, one edit,
