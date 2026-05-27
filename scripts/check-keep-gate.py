@@ -158,6 +158,26 @@ def main() -> int:
             )
             return 3
 
+    # Combo labels must match between previous and trial. Non-overlapping
+    # key sets would let Gate 4 iterate without matching anything (both
+    # totals stay 0, gate silently passes). Same target run twice should
+    # produce identical combo labels; mismatch means the logs are from
+    # different bench versions or someone hand-edited a log.
+    prev_combo_keys = set(prev["combos"].keys())
+    cur_combo_keys = set(cur["combos"].keys())
+    if prev_combo_keys != cur_combo_keys:
+        only_prev = prev_combo_keys - cur_combo_keys
+        only_cur = cur_combo_keys - prev_combo_keys
+        print(
+            "error: per-combo label sets disagree between logs",
+            file=sys.stderr,
+        )
+        if only_prev:
+            print(f"  only in previous: {sorted(only_prev)}", file=sys.stderr)
+        if only_cur:
+            print(f"  only in trial:    {sorted(only_cur)}", file=sys.stderr)
+        return 3
+
     failures: list[str] = []
 
     # Gate 2: CI non-overlap on geomean.
