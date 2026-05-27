@@ -330,6 +330,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "posting-intersect"
+version = "0.1.0"
+dependencies = [
+ "harness-common",
+]
+
+[[package]]
+name = "posting-seek"
+version = "0.1.0"
+dependencies = [
+ "harness-common",
+]
+
+[[package]]
 name = "pq-l2"
 version = "0.1.0"
 dependencies = [

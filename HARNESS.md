@@ -77,11 +77,19 @@ A kernel is **kept** iff:
      from passing on noise.
    - Both CIs come from the bootstrap_ci_geomean field printed as
      `geomean_*_ci_90pct: [lo, hi]`.
-3. `worst_ns_per_*` ≤ 1.05 × the previous best-kept kernel's worst (wall-clock,
-   regardless of platform, the worst-case guard is platform-portable).
-4. `total_seconds` ≤ 600 (the per-trial cap; exceed it → `std::process::exit(3)`).
-5. Build clean: `cargo build --release` and
-   `cargo clippy --release --all-targets -- -D warnings` both succeed.
+3. **Worst-combo sanity cap.** `worst_ns_per_*` ≤ 1.05 × previous best
+   worst. Single-number cap; catches catastrophic single-combo regressions.
+4. **Aggregate trade-off ratio.** Sum of absolute improvements ≥10× sum of
+   absolute regressions across per-combo geomeans. Accepts asymmetric trades
+   (big deep-case win, small cheap-case loss) without forcing uniformity.
+5. `total_seconds` ≤ 600 (`std::process::exit(3)` on exceed).
+6. Build clean: `cargo build --release` + `cargo clippy --release
+   --all-targets -- -D warnings`.
+
+**Apply via `scripts/check-keep-gate.py <previous-best.log> <run.log>`.**
+Exit codes: 0 keep, 1 revert, 2 correctness fail, 3 parse error. Don't apply
+by hand — sessions diverge on asymmetric trades. Thresholds are tunable
+constants at the top of the script.
 
 ### Baseline vs trial measurements
 
@@ -128,8 +136,11 @@ After reading `HARNESS.md` and the target's `program.md`:
    cargo run --release --bin run_experiment -p <target> > run.log 2>&1
    ```
 
-6. **Parse and decide.** Extract the universal fields plus any per-target
-   fields. Compute deltas vs. the last-kept row. Apply the keep criteria above.
+6. **Parse and decide.** Invoke `scripts/check-keep-gate.py <previous-best.log>
+   <run.log>`. The script applies the formal keep-gate (correctness, CI
+   non-overlap on geomean, worst-combo cap at 5%, aggregate trade-off
+   ratio ≥10×) and emits PASS/FAIL with violations cited. Exit 0 → keep;
+   exit 1 → revert; exit 2 → correctness fail; exit 3 → parse error.
 
 7. **Log.** Append one row to `results.tsv` matching the target's header.
 
@@ -159,6 +170,56 @@ After reading `HARNESS.md` and the target's `program.md`:
       agent where the cliff is.
     Format: free-form Markdown; one entry per lesson with date, trial
     commit SHA, the mechanism, and the implication. Keep entries short.
+
+## Background research (papers, public benchmarks)
+
+Web fetches inside the inner loop contaminate iteration latency. Three
+points OUTSIDE the loop where fetches are allowed:
+
+1. **Scaffold time** (before `scripts/scaffold-target.sh`): upstream
+   hot-path trace per `docs/adding-a-target.md` Step 0. Quote the call
+   site (SHA + path + line) in the capsule. ≤30 min.
+2. **Session start**: if `program.md` cites named algorithms or
+   `lessons.md` has open `RESEARCH:` markers, skim 1–3 papers and
+   append one-line summaries to `lessons.md` under `## References`.
+   ≤10 min.
+3. **On-stuck**: after 3 consecutive rejected trials on the same
+   target, pause the loop, identify the regime, fetch 1–2 sources,
+   record in `lessons.md`, then propose a new hypothesis.
+
+Cite external sources in the relevant trial's commit message body.
+Use `WebFetch` for known URLs and `WebSearch` for discovery.
+
+## Integration validation (once per target, before claiming a Lance win)
+
+A microbench win is a kernel result. A Lance win requires upstream
+integration. Procedure:
+
+```bash
+# 1. Clone upstream at the pinned SHA (from crates/lance-snapshots/src/lib.rs)
+git clone --depth 1 https://github.com/lance-format/lance /tmp/lance-bench
+cd /tmp/lance-bench
+git fetch --depth 1 origin <pinned-sha> && git checkout <pinned-sha>
+
+# 2. Build the bench that exercises this kernel (Step 0.5 identifies it).
+cargo build --release --bench <name> -p <crate>
+
+# 3. Capture baseline numbers by invoking the bench binary directly
+#    (skips cargo's rebuild churn that --bench would trigger):
+target/release/deps/<bench>-<hash> --bench '<regex-filter>'
+
+# 4. Apply the kernel change to upstream's source; verify correctness:
+cargo test --release -p <crate>
+
+# 5. Re-bench. Record baseline + patched + criterion p-value in the
+#    target's capsule under a new "Upstream integration" section.
+```
+
+If `p > 0.05`, the kernel win is real but production impact is
+unverified. **Do NOT claim a Lance speedup from microbench alone.**
+Either argue scale (with cost-model arithmetic), defer the target, or
+refocus its surface. posting-seek went further and *regressed* +12.7%
+on OR queries at 10M scale (p=0.03), forcing outright rejection.
 
 ## Never stop
 

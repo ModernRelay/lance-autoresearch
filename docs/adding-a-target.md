@@ -18,6 +18,96 @@ scalar reference, this harness is the wrong fit. See [`design.md`](design.md)
 
 ## Steps
 
+### 0. Trace the upstream hot path (BEFORE scaffolding)
+
+Find the primitive operation that dominates the target's caller code path
+in upstream Lance. This is the single highest-leverage step in the workflow;
+skipping it produces microbenchmarks that don't transfer to production. The
+`posting-intersect` target shipped without Step 0 and ended up measuring a
+kernel surface that Lance's WAND traversal does not call.
+
+Concretely:
+
+1. **Identify the upstream function(s) the target nominally optimizes.**
+   For `pq-l2` this was `compute_pq_distance` + `build_distance_table_l2`.
+   For a hypothetical decoder target it's the `decompress_*` function.
+2. **Grep upstream Lance for the file(s) that *call* those functions.**
+   Read the caller's tightest loop. The `gh` CLI works against
+   `lance-format/lance` at the pinned SHA from `crates/lance-snapshots/src/lib.rs`:
+   ```
+   gh api 'search/code?q=<function_name>+repo:lance-format/lance' \
+     --jq '.items[] | "\(.path)"'
+   gh api 'repos/lance-format/lance/contents/<path>?ref=<sha>' \
+     --jq '.content' | base64 -d
+   ```
+3. **Confirm the proposed kernel API mirrors what the caller calls.** If
+   your proposed signature (e.g. `fn intersect(lists: &[&[u32]], ...)`)
+   doesn't match any call site you found, **stop and redesign before
+   scaffolding.** The absence of a clean upstream function for your
+   surface usually means the operation is fused with something else
+   (scoring, decompression, iteration); inventing a clean surface measures
+   a primitive Lance doesn't use.
+4. **Record the call-site excerpt in the per-target capsule's "Lance call
+   site" section** (see Step 10 below for the format). If no direct call
+   site exists, the capsule must say so honestly; that admission triggers
+   a scoping conversation before code lands.
+
+Time budget: ≤30 minutes. Cheapest insurance the harness offers. See
+[`../HARNESS.md`](../HARNESS.md) § "Background research" item 1 for why
+this fires before scaffolding.
+
+### 0.5. Estimate cost-fraction (also BEFORE scaffolding)
+
+Step 0 found the kernel's call site. Step 0.5 estimates **what fraction
+of an end-to-end Lance query that call site actually consumes at
+upstream's bench scale**. This is the most-skipped step in the workflow
+and the single biggest source of "the microbench wins but production
+doesn't move" failures. `posting-seek` shipped a kept hybrid with -97%
+on its microbench and 0% (within noise) on upstream's actual FTS
+bench — because the kernel was only ~2% of total query cost at
+upstream's 1M-doc bench scale, so even a 100× kernel speedup is
+bounded by 2% production impact.
+
+Procedure:
+
+1. **Find the upstream bench that exercises this kernel.** Look in
+   `rust/lance/benches/` and `rust/lance-<crate>/benches/` for a bench
+   whose hot path goes through your kernel's call site. Read the
+   bench's setup to understand its scale (corpus size, query mix,
+   etc.).
+2. **Estimate per-call kernel cost.** From the upstream code shape
+   plus any inline comments or profiling notes, rough out the per-call
+   cost in nanoseconds. For an unoptimized linear loop, that's roughly
+   `loop_iterations × 3-5 ns/iter` on M1.
+3. **Estimate calls per query.** From the upstream caller's loop
+   structure: how many times does it invoke your kernel per typical
+   query?
+4. **Total query cost from upstream bench numbers.** Run the upstream
+   bench once at its default scale, or read past benchmark results.
+5. **Compute the fraction:** `(per-call cost × calls/query) / total
+   query cost`. If <5%, the headline production win is bounded by 5%
+   regardless of how good your kernel optimization is.
+
+If the fraction is <5%:
+
+- **Defer the target.** The work is methodology, not production
+  impact.
+- **Refocus.** The kernel may be too narrow. Consider whether the
+  target's surface should expand to include the more dominant kernel
+  it sits inside.
+- **Argue scale.** If the kernel cost grows superlinearly with corpus
+  size and the bench-vs-production scale gap is large (e.g., bench at
+  1M docs, production at 1B), the cost-fraction at production scale
+  may be much higher than at bench scale. Document this with cost-
+  model arithmetic in the capsule's "Cost fraction" section. The PR
+  becomes "low-risk infra change for billion-scale users," not "X%
+  faster Lance."
+
+Document the result in the target's capsule under a new "Cost
+fraction" section with explicit numbers. Future agents reading the
+capsule see the ceiling on the headline number before scaffolding any
+trials.
+
 ### 1. Scaffold the crate
 
 ```bash
@@ -148,11 +238,40 @@ Per-target agent skill, layered on top of `HARNESS.md`. Sections:
 
 A short doc covering:
 
+- Status (candidate / landed / has-results)
 - What's optimized (one sentence)
+- **Lance call site** (REQUIRED, the output of Step 0)
 - Upstream Lance source pointers (rev, file paths, function names)
 - Oracle definition (bit-exact / `max_abs_err`)
 - Speed workload shape (what shapes × distributions span)
-- Status (candidate / landed / has-results)
+
+The "Lance call site" section quotes the upstream caller code that drives
+this kernel, anchoring the per-target work to a real production hot path.
+Format:
+
+```
+## Lance call site
+
+Upstream `lance-format/lance` at SHA `<sha>`,
+`rust/lance-<crate>/src/<path>.rs`:
+
+    // lines N..M
+    <quoted excerpt of the tightest caller loop>
+
+This kernel's `<method>` corresponds to <line N> in <caller>.
+```
+
+If no direct call site exists for the kernel surface as proposed, the
+section MUST say so honestly:
+
+> No direct call site in current upstream; this kernel is
+> [a refactor target / a primitive for external systems / etc.].
+
+That admission is load-bearing. It signals that the target is measuring
+something Lance doesn't currently call, which should trigger a scoping
+conversation (and probably a sibling `<target>-<correct-shape>` capsule)
+before further code lands. See `docs/targets/posting-intersect.md` for
+an example of this honest scope-note pattern.
 
 ### 11. Verify end-to-end
 
@@ -186,6 +305,13 @@ one commit, each target's history should be independently revertible.
 
 ## Common gotchas
 
+- **Proposed kernel surface doesn't match an upstream call site.** The
+  single highest-impact failure mode. Catches itself only if you actually
+  do Step 0. `posting-intersect` shipped without Step 0 and ended up
+  measuring `intersect(&[&[u32]], ...)`, a surface Lance's WAND traversal
+  does not call. The trials are clean kernel engineering but the −81%
+  geomean is on a primitive that doesn't appear in production. Step 0
+  exists to prevent this.
 - **Forgetting the empty `[workspace]` block** at the root means cargo walks
   up to the omnigraph parent workspace. Already handled; just don't remove it.
 - **Per-target `Cargo.toml` referencing the wrong `harness-common` path.**

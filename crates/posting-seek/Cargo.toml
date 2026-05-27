@@ -1,0 +1,17 @@
+[package]
+name = "posting-seek"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Autoresearch target: block-aware seek over compressed posting list (Lance FTS WAND traversal primitive)."
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "run_experiment"
+path = "src/bin/run_experiment.rs"
+
+[dependencies]
+harness-common = { path = "../harness-common" }

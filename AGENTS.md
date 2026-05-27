@@ -34,20 +34,28 @@ Don't read everything. Pick the row.
 ## Principles (apply when the bright-line rules are silent)
 
 The meta-principle: **every kept commit should be a Lance upstream PR
-you'd defend in review.** Wins that wouldn't survive that bar are
-noise, not signal. The rules below flow from this.
+you'd defend in review AND produce a measurable end-to-end speedup at
+upstream's bench scale.** A microbench win that disappears in
+integration measurement is a kernel exercise, not a Lance win. Hunt
+big wins — session value is proportional to absolute time saved at
+production scale, not relative kernel percentages. The checks run
+BEFORE scaffolding (principle 5, cost-fraction + access-pattern) and
+AFTER landing trials (HARNESS.md § Integration validation).
 
 1. **Correctness > simplicity > performance, lexicographic.** Never
    trade correctness for simpler code. Never trade simplicity for
    marginal performance. A 1% speedup that requires 200 lines of
    unsafe is worse than the original.
 
-2. **Wins must transfer across shapes AND distributions.** A change
-   that improves one combo by 30% but regresses another by 5% fails
-   the keep gate even if global geomean improves. Lance users run many
-   shapes; an aarch64-only or high-dim-only win must be gated by
-   `#[cfg(target_arch = ...)]` or shape-specific dispatch, never
-   silently merged into a portable path.
+2. **Wins must transfer across shapes AND distributions.** Lance users
+   run many shapes; an aarch64-only or high-dim-only win must be gated
+   by `#[cfg(target_arch = ...)]` or shape-specific dispatch, never
+   silently merged into a portable path. The exact threshold for
+   "regression on one combo offset by win on another" is codified in
+   `HARNESS.md` § keep-gate item 4 (aggregate trade-off ratio: wins
+   must dominate losses by ≥10× in absolute ns) and enforced by
+   `scripts/check-keep-gate.py`. Don't apply per-combo thresholds by
+   hand; running the script is the contract.
 
 3. **Mechanism > vibes.** When a trial wins, explain WHY in the commit
    message. `"4x unroll: -19% from FP-ADD latency bound on M1"` is a
@@ -55,21 +63,46 @@ noise, not signal. The rules below flow from this.
    for mechanism; if you can't articulate it, you don't understand the
    win, and it's likely to regress in a future codegen change.
 
-4. **Substrate first.** Don't reinvent what upstream Lance, LLVM
+4. **Mirror upstream's surface, don't invent.** If upstream Lance
+   doesn't expose your proposed kernel as a callable function, that's
+   a load-bearing signal, not an inconvenience. It usually means the
+   operation is fused into a larger loop (scoring, iteration,
+   decompression). Inventing a clean surface around it produces a
+   microbenchmark that doesn't match production cost paths. Trace
+   the actual hot caller in upstream BEFORE scaffolding; design the
+   kernel API to mirror what gets called. `docs/adding-a-target.md`
+   Step 0 enforces this; every target's capsule has a "Lance call
+   site" section that quotes the caller code with SHA + line numbers.
+
+5. **Estimate cost-fraction AND access pattern before optimizing.**
+   Production impact is bounded by (a) the kernel's share of total
+   query cost AND (b) whether the production caller's input
+   distribution matches what your microbench imposes. Do the
+   back-of-envelope math BEFORE scaffolding per
+   `docs/adding-a-target.md` Step 0.5. Trace not just *where* the
+   kernel is called but *how* — the distribution the production hot
+   path generates is what determines the integration delta.
+
+   posting-seek surfaced both failures: kernel was <2% of total at 1M
+   (cost-fraction → 0% production change); microbench's `skip_deep`
+   pattern didn't match WAND's score-skip-induced shallow skips at
+   10M (access-pattern → **+12.7% REGRESSION** on OR queries, p=0.03).
+
+6. **Substrate first.** Don't reinvent what upstream Lance, LLVM
    autovec, or hardware prefetchers already do. Read `lance-snapshots/`
    for upstream's current pattern before proposing the same idea via
    different syntax. The same thing in different code carries no value.
 
-5. **One hypothesis per trial.** Don't combine "transpose codebook" +
+7. **One hypothesis per trial.** Don't combine "transpose codebook" +
    "add NEON FMA" in one diff. You won't know which contributed. Land
    them as two trials; the composition becomes its own third trial.
 
-6. **No new dependencies.** Adding `criterion-extras` or `simdeez`
+8. **No new dependencies.** Adding `criterion-extras` or `simdeez`
    etc. moves the optimization into the dependency. The harness
    measures kernels in isolation; importing a SIMD library defeats
    the purpose.
 
-7. **The bit-exact gate IS the contract.** Failing it means your
+9. **The bit-exact gate IS the contract.** Failing it means your
    change produces different output than upstream's, which is silent
    recall regression if shipped. Don't override "just this once." If
    you want a lossy track, surface it to the human as a separate

@@ -36,19 +36,31 @@ follows the [`docs/adding-a-target.md`](docs/adding-a-target.md) workflow.
 | `crates/pq-cosine`     | candidate | `lance-linalg::distance::cosine` | PQ cosine distance | pending |
 | `crates/pq-dot`        | candidate | `lance-linalg::distance::dot` | PQ dot-product distance | pending |
 | `crates/ivf-partition` | candidate | `lance-index::vector::ivf` partition select | IVF partition selection (centroid scan) | pending |
-| `crates/fts-bm25`      | candidate | `lance-index::scalar::inverted` BM25 | FTS BM25 scoring inner loop | pending |
+| `crates/fts-bm25`      | candidate (Step 0 ✓) | `lance-index::scalar::inverted::scorer` `Scorer::doc_weight` | FTS BM25 scoring inner loop | pending; clean call site at `wand.rs:252` via the `Scorer` trait — ready to scaffold |
 | `crates/bitpack`       | candidate | `lance-encoding::encodings::bitpack` | Bitpack integer decode | pending |
 | `crates/dictionary`    | candidate | `lance-encoding::encodings::dictionary` | Dictionary decode | pending |
 | `crates/fsst`          | candidate | `lance-encoding::encodings::fsst` | FSST string decode | pending |
 | `crates/take`          | candidate | `lance-core::utils::take` | Take / gather kernel | pending |
 | `crates/predicate`     | candidate | `lance-datafusion` filter eval | Predicate evaluation kernels | pending |
-| `crates/posting-intersect` | candidate | `lance-index::scalar::inverted` | Posting list intersection (FTS AND) | pending |
+| [`crates/posting-intersect`](crates/posting-intersect) | landed (off-path; see capsule) | `lance-index::scalar::inverted` (no direct call site) | Sorted u32 posting-list AND intersect | **−81% geomean vs scalar K-way merge** (M1 Max, aarch64; bit-equivalent output; x86 fallback intact). Kernel surface not in current Lance hot path; see [`posting-seek`](docs/targets/posting-seek.md) for the Lance-aligned shape. |
+| [`crates/posting-seek`](crates/posting-seek) | kernel landed; **REJECTED as upstream PR** | `lance-index::scalar::inverted::wand` (`next`, `shallow_next`) | Block-aware seek over compressed posting list | Microbench −97% worst-case / −58% geomean. Upstream integration: 1M no change (p > 0.05); **10M REGRESSES OR queries +12.7% (p=0.03)**. WAND's score-skip preempts deep `next()` calls; gallop's overhead loses on shallow skips that actually dominate. The microbench was self-fulfilling. See [capsule](docs/targets/posting-seek.md) for full empirical breakdown |
 | `crates/topk-merge`    | candidate | scan-merge | Top-K k-way merge | pending |
 
 The candidate targets are documented in [`docs/targets/`](docs/targets/) and
 can be added by following [`docs/adding-a-target.md`](docs/adding-a-target.md).
-The single landed target (`pq-l2`) proves the harness shape; the candidates
-wait for an agent to spin them up.
+`pq-l2`, `posting-intersect`, and `posting-seek` are landed; the rest
+wait for an agent to spin them up. `pq-l2` carries a −43% geomean win
+on M1 Max. `posting-intersect` lands at −81% geomean via three trials
+(branchless merge → galloping at ratio>16× → NEON cross-product SIMD
+merge), but a retroactive Step 0 trace (see `docs/adding-a-target.md`)
+showed its kernel surface is not in Lance's current WAND hot path —
+the trial wins are clean kernel engineering on a primitive Lance would
+need a refactor to use. `posting-seek` is the Lance-aligned follow-up:
+a hybrid linear-budget + McIlroy gallop change in `wand.rs::next` that
+drops the worst-case seek (Large × Skip-deep) from 3011 ns → 74 ns,
+~30 LOC, no `unsafe`, no SIMD. Step 0 of the workflow was added in
+response to `posting-intersect`'s mis-scope; future targets won't ship
+without their "Lance call site" capsule section filed first.
 
 ## The contract every target follows
 
